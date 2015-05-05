@@ -58,10 +58,14 @@
 #define RED 179
 
 #include "opencv2/core/core.hpp"
+#include <chrono>
 
 class ColourTracking
 {
-	/**************************** VARIABLES ***************************/
+	private:
+	/******************** Private access variables ********************/
+	/***************** (e.g. configuration parameters) ****************/
+	
 	// Mats for different image stages
     cv::Mat imgHSV;
     cv::Mat imgThresh;
@@ -94,12 +98,19 @@ class ColourTracking
 	// parameters for use in UDP communication
 	char comm_pass[256];
 	unsigned int comm_port;
+	
+	// chrono time measuring variables
+	std::chrono::high_resolution_clock::time_point start_time;
+	std::chrono::high_resolution_clock::time_point end_time;
+	unsigned int time_dif;
+	
 	/******************************************************************/
 	
 	
     
+    /******************** OpenCV-related and other ********************/
+    /******************** private access functions ********************/
     
-    /******************** OpenCV-related functions ********************/
     // threshold image with user defined parameters
     void ThresholdImage(cv::Mat, cv::Mat&, cv::Mat&, int [], bool);
     
@@ -117,32 +128,41 @@ class ColourTracking
     
     // acquire hsv values from around clicked area
     int ClickHSV(cv::Mat, int, int, int);
+        
+    // returns timestamp closed with brackets (used in std::cout)
+    std::string timestamp();
     
-    // calculate delay for the waitKey function in main.cpp
-    unsigned int CalculateDelay(unsigned int&);
     /******************************************************************/
     
     
     
-    /********************** image stuff **************************/
-	public:
-	
+    public:
+    /******************** Public access variables *********************/
+    /******************************************************************/
+    
 	cv::Mat imgOriginal; /* this Mat is public because it's used in main */
+	
+	void setHSV (int *); /* set hue, saturation and light intensity*/
+    int* hsv(); /* return array of hsv values */
+    int val(unsigned int); /* return single value from hsv array */
+    
+    unsigned int height(); /* return captured frame height */
+	unsigned int width();
+	
+    void nogui(); /* set GUI parameter to false */
+    
+    /******************************************************************/
+    
+    
+    
+	/********************* Public functions ***************************/
+	/******************************************************************/
 	
 	//constructor that sets default values for all parameters
 	ColourTracking();
-    
-    void setHSV (int *); /* set hue, saturation and light intensity*/
-    int* hsv(); /* return array of hsv values */
-    int val(unsigned int); /* return single value from hsv array */
-    unsigned int height(); /* return captured frame height */
-	unsigned int width();
-    
-    // disable GUI
-    void nogui();
-    
-//    int InitCam(unsigned int);
-//    int CapFrame(cv::Mat&);
+	
+//   int InitCam(unsigned int);
+//   int CapFrame(cv::Mat&);
     
     // applies all the main functions (described above) on captured frame
     void Process(int);
@@ -153,11 +173,16 @@ class ColourTracking
 	// run-time control panel with highgui trackbars
 	bool CreateControlWindow();
 
-	// return new calculated waitKey delay time
-	unsigned int delay(unsigned int&);
+	
+	void t_start(); /* set starting timepoint */
+	void t_end();   /* set end timepoint and calculate time_dif*/
+	
+	// calculate delay for the waitKey function in main.cpp
+    unsigned int delay();
 	
 	// parse command line arguments
 	int CmdParameters(int, char**);
+	
 	/******************************************************************/
 };
 

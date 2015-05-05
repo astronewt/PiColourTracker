@@ -23,18 +23,21 @@
 
 
 #include "opencv2/imgproc/imgproc.hpp"
-#include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
+//#include "opencv2/core/core.hpp" // already defined in header
 
 #include "ColourTracking.hpp"
 
 #include <vector>
 #include <cmath>
 #include <iostream>
+#include <string>
+// <chrono> also included with header
 
 using namespace cv;
+using namespace std::chrono;
 
-#define PI_VALUE 3.1415926535
+
 /*
 int ColourTracking::InitCam(unsigned int vidnr, unsigned int height, unsigned int width)
 {
@@ -52,8 +55,8 @@ int ColourTracking::InitCam(unsigned int vidnr, unsigned int height, unsigned in
 }
 */
 
-
-ColourTracking::ColourTracking() //default constructor
+ // constructor that gives default values to all parameters
+ColourTracking::ColourTracking()
 {
 	iCount = ENABLED;
 	iMorphLevel = DISABLED;
@@ -305,18 +308,10 @@ int* ColourTracking::hsv()
     return iHSV;
 }
 
-
 int ColourTracking::val(unsigned int k)
 {
     return iHSV[k];
 }
-
-
-unsigned int ColourTracking::delay(unsigned int &dif)
-{
-	return CalculateDelay(dif);
-}
-
 
 unsigned int ColourTracking::height()
 {
@@ -329,7 +324,20 @@ unsigned int ColourTracking::width()
 }
 
 
-unsigned int ColourTracking::CalculateDelay(unsigned int &timedif)
+void ColourTracking::t_start()
+{
+	start_time = high_resolution_clock::now();
+}
+
+void ColourTracking::t_end()
+{
+	end_time = high_resolution_clock::now();
+	
+	//
+	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
+}
+
+unsigned int ColourTracking::delay()
 {
 	static unsigned int k = 0; //counter
 	static unsigned int result = uiDelay;
@@ -337,10 +345,10 @@ unsigned int ColourTracking::CalculateDelay(unsigned int &timedif)
 	if (k >= DEF_INTERVAL){
 		
 		if (iDebugLevel >= 2){
-			std::cout << " [avg duration per " << k+1 << " cycles]: " << ((int) timedif/(k+1)) << "ms\n";
+			std::cout << " [avg duration per " << k+1 << " cycles]: " << ((int) time_dif/(k+1)) << "ms\n";
 		}
 		
-		result = (int) timedif/(k+1); 
+		result = (int) time_dif/(k+1); 
 				
 		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
 		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
@@ -350,7 +358,7 @@ unsigned int ColourTracking::CalculateDelay(unsigned int &timedif)
 		}
 				
 		k = 0;
-		timedif = 0;
+		time_dif = 0;
 	}
 	
 	k++;
@@ -478,4 +486,13 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 	}
 	
 	return 1;
+}
+
+std::string ColourTracking::timestamp()
+{
+	std::string stamp = "[";
+	
+	
+	
+	return stamp;
 }

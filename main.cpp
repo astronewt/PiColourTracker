@@ -1,5 +1,5 @@
 /*
- * CT_main.cpp
+ * main.cpp
  * 
  * Copyright 2015 Carl Ivask
  * 
@@ -23,11 +23,11 @@
 
 #include "ColourTracking.hpp"
 
-//#include "opencv2/core/core.hpp"
+//#include "opencv2/core/core.hpp" included with header
 #include "opencv2/highgui/highgui.hpp"
 
 #include <iostream>
-#include <chrono>
+//#include <chrono> included with header
 
 using namespace std;
 using namespace cv;
@@ -41,8 +41,7 @@ int main(int argc, char **argv)
 	
 //	img.InitCam();
 	
-	// initialize camera & video capturing
-	VideoCapture cap(0);
+	VideoCapture cap(0); /* initialize camera & video capturing */
 	
 	
     if (!cap.isOpened())
@@ -51,20 +50,17 @@ int main(int argc, char **argv)
          return -1;
     }
 
-	// set height & width of videocapture
-	cap.set(CV_CAP_PROP_FRAME_WIDTH, capture.width());
-	cap.set(CV_CAP_PROP_FRAME_HEIGHT, capture.height());
+	cap.set(CV_CAP_PROP_FRAME_WIDTH, capture.width());   /* set width and */ 
+	cap.set(CV_CAP_PROP_FRAME_HEIGHT, capture.height()); /* height of captured frame */
 	
-	cout << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) << " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl;
+	cout << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) \
+	<< " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl; /* print current frame size */
 	
-	capture.CreateControlWindow();
-	
-	chrono::high_resolution_clock::time_point start_time, end_time;
-	unsigned int time_dif;
+	capture.CreateControlWindow(); /* create control panel with trackbars */
 	
 	while (true)
 	{
-		start_time = chrono::high_resolution_clock::now();
+		capture.t_start(); /* starting point for time measurement */
 		
 		bool bSuccess = cap.read(capture.imgOriginal);
 		if (!bSuccess){
@@ -72,17 +68,13 @@ int main(int argc, char **argv)
 			return -1;
 		}
 		
-		//the argument is the kernel size
-		capture.Process(3);
+		capture.Process(3); /* the argument is the kernel size */
 		
-		// Display images
-		capture.Display();
+		capture.Display(); /* display original and/or thresholded frame */
 		
-		// stop time measurement
-		end_time = chrono::high_resolution_clock::now();
-		time_dif = time_dif + (chrono::duration_cast<chrono::milliseconds> (end_time - start_time).count());
+		capture.t_end(); /* end point for time measurement */
 		
-		if (waitKey(capture.delay(time_dif)) == ESCAPE)
+		if (waitKey(capture.delay()) == ESCAPE)
 		{
 			cout << "ESC key pressed by user. Exiting..\n";
 			return -1;

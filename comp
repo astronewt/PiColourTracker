@@ -19,11 +19,11 @@ echo
 
 #start=`date +%s`
 if g++ -Wall -std=c++0x main.cpp ColourTracking.cpp -o cam -lopencv_videoio -lopencv_core  -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs; then
-echo "Compilation succeeded!";
-echo "Output file: ctout";
-#end=`date +%s`
-#runtime=$((end-start))
-#echo "Time spent: $runtime";
+   echo "Compilation succeeded!";
+   echo "Output file: cam";
+   #end=`date +%s`
+   #runtime=$((end-start))
+   #echo "Time spent: $runtime";
 else
-echo "Compilation failed!";
+   echo "Compilation failed!";
 fi
