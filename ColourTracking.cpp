@@ -31,7 +31,7 @@
 #include <vector>
 #include <cmath>
 #include <iostream>
-#include <string>
+//#include <string> uncomment when implementing timestamp()
 // <chrono> also included with header
 
 using namespace cv;
@@ -55,6 +55,106 @@ int ColourTracking::InitCam(unsigned int vidnr, unsigned int height, unsigned in
 }
 */
 
+std::string ColourTracking::timestamp()
+{
+	std::string stamp = "[";
+	
+	
+	
+	return stamp;
+}
+
+void ColourTracking::setHSV (int user[])
+{
+	for (int i = 0; i < 6; i++){
+        iHSV[i] = user[i];
+    }
+}
+
+
+int* ColourTracking::hsv()
+{
+    return iHSV;
+}
+
+int ColourTracking::val(unsigned int k)
+{
+    return iHSV[k];
+}
+
+unsigned int ColourTracking::height()
+{
+	return uiCaptureHeight;
+}
+
+unsigned int ColourTracking::width()
+{
+	return uiCaptureWidth;
+}
+
+void ColourTracking::t_start()
+{
+	start_time = high_resolution_clock::now();
+}
+
+void ColourTracking::t_end()
+{
+	end_time = high_resolution_clock::now();
+	
+	//
+	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
+}
+
+unsigned int ColourTracking::delay()
+{
+	static unsigned int k = 0; //counter
+	static unsigned int result = uiDelay;
+	
+	if (k >= DEF_INTERVAL){
+		
+		if (iDebugLevel >= 2){
+			std::cout << " [avg duration per " << k+1 << " cycles]: " << ((int) time_dif/(k+1)) << "ms\n";
+		}
+		
+		result = (int) time_dif/(k+1); 
+				
+		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
+		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
+		
+		if (iDebugLevel >= 2){				
+			std::cout << " Setting cycle time to: " << result << "ms\n";
+		}
+				
+		k = 0;
+		time_dif = 0;
+	}
+	
+	k++;
+	
+	return result;
+}
+
+void ColourTracking::nogui()
+{
+	bGUI = false;
+}
+
+void ColourTracking::Display()
+{
+    if (bGUI && iShowThresh == ENABLED){
+		
+		imshow("Thresholded Image", imgThresh); /* show the thresholded image */
+		
+	}else destroyWindow("Thresholded Image");
+	
+    if (bGUI && iShowOriginal == ENABLED){
+		
+		imgOriginal += imgCircles;       /* add drawn circles to original */
+		imshow("Original", imgOriginal); /* show the original image */
+		
+	}else destroyWindow("Original");
+}
+
  // constructor that gives default values to all parameters
 ColourTracking::ColourTracking()
 {
@@ -71,6 +171,9 @@ ColourTracking::ColourTracking()
     iDebugLevel = DISABLED;
 	uiCaptureHeight = CAP_HEIGHT;
 	uiCaptureWidth = CAP_WIDTH;
+	
+	iSatAdjust = 50;
+	iValAdjust = 50;
 	
 	ObjectMinsize = OBJ_MINSIZE;
 	ObjectMaxsize = OBJ_MAXSIZE;
@@ -174,6 +277,9 @@ int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 	{	
 
 		if (amount != prev && amount < (total/(k+1))+dif && amount >= (total/(k+1))-dif){
+			if (iDebugLevel >= 1){
+				std::cout << /* timestamp() << */ "OBJECTS: " << amount << std::endl;
+			}
 			prev = amount;
 			k = 0;
 			total = amount;
@@ -206,21 +312,8 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Poin
 	}
 	
 }
-
-void ColourTracking::nogui()
-{
-	bGUI = false;
-}
-
-void ColourTracking::Display()
-{
-    if (bGUI && iShowThresh == ENABLED) imshow("Thresholded Image", imgThresh); //show the thresholded image	
-            else destroyWindow("Thresholded Image");
-    if (bGUI && iShowOriginal == ENABLED) imshow("Original", imgOriginal); //show the original image
-            else destroyWindow("Original");
-}
     
-    // acquire hsv values from around clicked area
+// acquire hsv values from around clicked area
 int ColourTracking::ClickHSV(cv::Mat src, int x, int y, int edge)
 {
 	cv::Vec3b values;
@@ -292,78 +385,6 @@ int ColourTracking::ClickHSV(cv::Mat src, int x, int y, int edge)
 	iHSV[5] = highestV + 50;//(int) avgV + 200;
 	
 	return 1;
-}
-
-
-void ColourTracking::setHSV (int user[])
-{
-	for (int i = 0; i < 6; i++){
-        iHSV[i] = user[i];
-    }
-}
-
-
-int* ColourTracking::hsv()
-{
-    return iHSV;
-}
-
-int ColourTracking::val(unsigned int k)
-{
-    return iHSV[k];
-}
-
-unsigned int ColourTracking::height()
-{
-	return uiCaptureHeight;
-}
-
-unsigned int ColourTracking::width()
-{
-	return uiCaptureWidth;
-}
-
-
-void ColourTracking::t_start()
-{
-	start_time = high_resolution_clock::now();
-}
-
-void ColourTracking::t_end()
-{
-	end_time = high_resolution_clock::now();
-	
-	//
-	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
-}
-
-unsigned int ColourTracking::delay()
-{
-	static unsigned int k = 0; //counter
-	static unsigned int result = uiDelay;
-	
-	if (k >= DEF_INTERVAL){
-		
-		if (iDebugLevel >= 2){
-			std::cout << " [avg duration per " << k+1 << " cycles]: " << ((int) time_dif/(k+1)) << "ms\n";
-		}
-		
-		result = (int) time_dif/(k+1); 
-				
-		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
-		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
-		
-		if (iDebugLevel >= 2){				
-			std::cout << " Setting cycle time to: " << result << "ms\n";
-		}
-				
-		k = 0;
-		time_dif = 0;
-	}
-	
-	k++;
-	
-	return result;
 }
 
 
@@ -486,13 +507,4 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 	}
 	
 	return 1;
-}
-
-std::string ColourTracking::timestamp()
-{
-	std::string stamp = "[";
-	
-	
-	
-	return stamp;
 }

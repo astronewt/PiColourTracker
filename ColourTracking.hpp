@@ -130,7 +130,11 @@ class ColourTracking
     int ClickHSV(cv::Mat, int, int, int);
         
     // returns timestamp closed with brackets (used in std::cout)
+    // STILL NOT IMPLEMENTED AGAIN
     std::string timestamp();
+    
+    // TODO
+    // SETMOUSECALLBACK!!!!!!!!!!!!!!!!!!!!!!!!
     
     /******************************************************************/
     

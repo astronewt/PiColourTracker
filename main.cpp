@@ -58,6 +58,8 @@ int main(int argc, char **argv)
 	
 	capture.CreateControlWindow(); /* create control panel with trackbars */
 	
+	//i'm afraid i can't let you compile before you put a callback for clicking!!
+	
 	while (true)
 	{
 		capture.t_start(); /* starting point for time measurement */
