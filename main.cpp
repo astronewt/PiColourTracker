@@ -34,12 +34,9 @@ using namespace cv;
 
 int main(int argc, char **argv)
 {
-	ColourTracking capture;	
+	ColourTracking ct;	
 	
-	capture.CmdParameters(argc, argv);
-//	img.setHSV(capture.hsv());
-	
-//	img.InitCam();
+	if (ct.CmdParameters(argc, argv) < 0) return -1; /* parse command line arguments */
 	
 	VideoCapture cap(0); /* initialize camera & video capturing */
 	
@@ -50,33 +47,32 @@ int main(int argc, char **argv)
          return -1;
     }
 
-	cap.set(CV_CAP_PROP_FRAME_WIDTH, capture.width());   /* set width and */ 
-	cap.set(CV_CAP_PROP_FRAME_HEIGHT, capture.height()); /* height of captured frame */
-	
+	cap.set(CV_CAP_PROP_FRAME_WIDTH, ct.width());   /* set width and */ 
+	cap.set(CV_CAP_PROP_FRAME_HEIGHT, ct.height()); /* height of captured frame */
+
 	cout << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) \
 	<< " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl; /* print current frame size */
 	
-	capture.CreateControlWindow(); /* create control panel with trackbars */
-	
-	//i'm afraid i can't let you compile before you put a callback for clicking!!
+	ct.CreateControlWindow(); /* create control panel with trackbars */
 	
 	while (true)
 	{
-		capture.t_start(); /* starting point for time measurement */
+
+		ct.t_start(); /* starting point for time measurement */
 		
-		bool bSuccess = cap.read(capture.imgOriginal);
+		bool bSuccess = cap.read(ct.imgOriginal);
 		if (!bSuccess){
 			cout << " Problem reading from camera.\n";
 			return -1;
 		}
 		
-		capture.Process(3); /* the argument is the kernel size */
+		ct.Process(3); /* the argument is the kernel size */
+
+		ct.Display(); /* display original and/or thresholded frame */	
 		
-		capture.Display(); /* display original and/or thresholded frame */
+		ct.t_end(); /* end point for time measurement */
 		
-		capture.t_end(); /* end point for time measurement */
-		
-		if (waitKey(capture.delay()) == ESCAPE)
+		if (waitKey(ct.delay()) == ESCAPE)
 		{
 			cout << "ESC key pressed by user. Exiting..\n";
 			return -1;

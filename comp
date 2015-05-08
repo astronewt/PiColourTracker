@@ -12,13 +12,12 @@ echo "opencv_videoio"
 echo "opencv_core"
 echo "opencv_highgui"
 echo "opencv_imgproc"
-echo "opencv_imgcodecs"
 echo
 echo "Starting.."
 echo
 
 #start=`date +%s`
-if g++ -Wall -std=c++0x main.cpp ColourTracking.cpp -o cam -lopencv_videoio -lopencv_core  -lopencv_highgui -lopencv_imgproc -lopencv_imgcodecs; then
+if g++ -Wall -std=c++0x main.cpp ColourTracking.cpp -o cam -lopencv_videoio -lopencv_core  -lopencv_highgui -lopencv_imgproc; then
    echo "Compilation succeeded!";
    echo "Output file: cam";
    #end=`date +%s`

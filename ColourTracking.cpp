@@ -34,26 +34,16 @@
 //#include <string> uncomment when implementing timestamp()
 // <chrono> also included with header
 
+/** Includes for socket communication **/
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+/** ** ** **/
+
 using namespace cv;
 using namespace std::chrono;
 
-
-/*
-int ColourTracking::InitCam(unsigned int vidnr, unsigned int height, unsigned int width)
-{
-    cv::VideoCapture cap(0);
-    if (!cap.isOpened())
-    {
-        std::cout << "Problem loading camera. Exiting..\n";
-        return -1;
-    }
-    cap.set(cv::CV_CAP_PROP_FRAME_WIDTH, width);
-    cap.set(cv::CV_CAP_PROP_FRAME_HEIGHT, height);
-    std::cout << "Camera frame HEIGHT:" cap.get(cv::CV_CAP_PROP_FRAME_HEIGHT) << " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH);
-    
-    return 1;
-}
-*/
 
 std::string ColourTracking::timestamp()
 {
@@ -92,6 +82,39 @@ unsigned int ColourTracking::width()
 	return uiCaptureWidth;
 }
 
+
+// setup socket for UDP communication
+void ColourTracking::setupsocket()
+{
+	sockfd = socket(AF_INET, SOCK_DGRAM, COMM_PROTOCOL);
+	
+	bzero((char *) &server_addr, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = INADDR_ANY;
+	server_addr.sin_port = htons(comm_port);
+	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
+}
+    
+// receive and send messages through socket
+// update buffer with current info
+void ColourTracking::writesocket(int amount)
+{		
+	bzero(buffer,256);
+	clientlen = sizeof(client_addr);
+	
+	recvfrom(sockfd, buffer, 256, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
+
+	if (!strcmp(buffer,comm_pass)){
+		bzero(buffer,256);
+		sprintf(buffer, "%d/%d/%d/%d/%d/%d/%d", amount, iHSV[0], iHSV[1], iHSV[2], iHSV[3], iHSV[4], iHSV[5]);
+		
+		if (iDebugLevel >= 2) std::cout << "Comm buffer: " << buffer << std::endl;
+		
+		sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
+	}
+}
+    
+    
 void ColourTracking::t_start()
 {
 	start_time = high_resolution_clock::now();
@@ -149,7 +172,9 @@ void ColourTracking::Display()
 	
     if (bGUI && iShowOriginal == ENABLED){
 		
-		imgOriginal += imgCircles;       /* add drawn circles to original */
+		if (imgOriginal.size() == imgCircles.size()){
+			imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
+		}
 		imshow("Original", imgOriginal); /* show the original image */
 		
 	}else destroyWindow("Original");
@@ -178,8 +203,12 @@ ColourTracking::ColourTracking()
 	ObjectMinsize = OBJ_MINSIZE;
 	ObjectMaxsize = OBJ_MAXSIZE;
 	
-//	comm_pass = COMM_PASS;
+	//comm_pass = COMM_PASS;
+	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;
+	
+	setupsocket();
+
 }
 
 
@@ -187,11 +216,16 @@ void ColourTracking::Process(int msize)
 {
     std::vector<cv::Point> locs;
     std::vector<float> areas;
+    static unsigned int amountbuffer = 0;
     
     ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
+    
     MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
-    CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
-    DrawCircles(imgOriginal, imgCircles, locs, areas);
+    
+    amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
+    writesocket(amountbuffer);
+    
+    if (amountbuffer == locs.size()) DrawCircles(imgOriginal, imgCircles, locs, areas);
 }
 
 void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
@@ -208,8 +242,7 @@ void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int
 
 void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::Mat& dst)
 {
-	// buffer Mat on which to use erode and dilate
-	cv::Mat buf = src;
+	cv::Mat buf = src; /* buffer Mat on which to use erode and dilate */
 	
 	if (morph > 0)	cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
 	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size))); 	
@@ -219,7 +252,7 @@ void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::M
 	dst = buf;
 }
     
-    // originally named CountContours
+
 int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, std::vector<float>& areas, float minsize, float maxsize)
 {
 	cv::Mat imgBuffer8u;
@@ -231,13 +264,12 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 	
 	
-	std::vector<cv::Moments> mv; //temporary moment vector
-	std::vector<float> sv; //temporary area vector
-	std::vector<cv::Point> mc; //temporary mass center vector (location)
+	std::vector<cv::Moments> mv; /* temporary moment vector */
+	std::vector<float> sv; /* temporary area vector */
+	std::vector<cv::Point> mc; /* temporary mass center vector (location) */
 	
 	
-	// get moments of objects
-	for (unsigned int i = 0; i < contours.size(); i++){
+	for (unsigned int i = 0; i < contours.size(); i++){ /* get moments of objects */
 
 		sv.push_back (contourArea(contours[i]));
 
@@ -252,6 +284,7 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	
 	// get mass centers
 	for (unsigned int i = 0; i < sv.size(); i++){
+		
 		mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
 	}
 	centers = mc;
@@ -295,7 +328,7 @@ int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 	return prev;
 }
     
-    // draw circles around found objects
+// draw circles around found objects
 void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Point> coords, std::vector<float> area)
 {
 	dst = cv::Mat::zeros(src.size(), src.type());
@@ -312,100 +345,27 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Poin
 	}
 	
 }
-    
-// acquire hsv values from around clicked area
-int ColourTracking::ClickHSV(cv::Mat src, int x, int y, int edge)
-{
-	cv::Vec3b values;
-	cv::Mat square;
-	int avgH = 0, avgS = 0, avgV = 0;
-	int lowestS, lowestV;
-	int highestS, highestV;
-	
-	int i,j;
-		
-	square = src(cv::Rect(x-(edge/2), y-(edge/2), edge, edge));
-	cv::blur(square, square, cv::Size(3,3), cv::Point(-1,-1));
-		
-	for (i=0; i<edge; i++){
-		for (j=0; j<edge; j++){
-			
-			values = square.at<cv::Vec3b>(i,j);
-			if (i == 0 && j == 0){
-				lowestS = 127;
-				highestS = 128;
-				lowestV = 127;
-				highestV = 127;
-			}
-				
-			// calculate hue by iterating through each pixel and finding average
-			avgH += values.val[0];
-				
-			// calculate saturation & value (intensity) by finding highest and lowest values
-			if (values.val[1] <= lowestS) lowestS = values.val[1];
-			if (values.val[1] > highestS) highestS = values.val[1];
-				
-			if (values.val[2] <= lowestV) lowestV = values.val[2];
-			if (values.val[2] > highestV) highestV = values.val[2];
-		}
-	}
-	avgH = avgH / (edge * edge);
-	avgS = (highestS + lowestS)/2;
-	avgV = (highestV + lowestV)/2;
-
-	
-	if (avgH > 10 && avgH <= ORANGE){
-		iHSV[0] = 0;
-		iHSV[1] = ORANGE;
-	}
-	else if (avgH > ORANGE && avgH <= YELLOW){
-		iHSV[0] = ORANGE;
-		iHSV[1] = YELLOW;
-	} 
-	else if (avgH > YELLOW && avgH <= GREEN){
-		iHSV[0] = YELLOW;
-		iHSV[1] = GREEN;
-	}
-	else if (avgH > GREEN && avgH <= BLUE){
-		iHSV[0] = GREEN;
-		iHSV[1] = BLUE;
-	}
-	else if (avgH > BLUE && avgH <= VIOLET){
-		iHSV[0] = BLUE;
-		iHSV[1] = VIOLET;
-	}
-	else if (avgH > VIOLET && avgH <= RED){
-		iHSV[0] = VIOLET;
-		iHSV[1] = RED;
-	}    
-
-	iHSV[2] = (int) avgS - iSatAdjust;
-	iHSV[3] = highestS + 50;//(int) avgS + 200;
-	iHSV[4] = (int) avgV - iValAdjust;
-	iHSV[5] = highestV + 50;//(int) avgV + 200;
-	
-	return 1;
-}
-
 
 bool ColourTracking::CreateControlWindow()
 {
-	namedWindow("Control", CV_WINDOW_NORMAL);
+	if (bGUI){
+	    namedWindow("Control", CV_WINDOW_NORMAL);
 		
-	cvCreateTrackbar("HUE min", "Control", &iHSV[0], 179);
-	cvCreateTrackbar("HUE max", "Control", &iHSV[1], 179);
-	cvCreateTrackbar("SAT min", "Control", &iHSV[2], 255);
-	cvCreateTrackbar("SAT max", "Control", &iHSV[3], 255);
-	cvCreateTrackbar("VAL min", "Control", &iHSV[4], 255);
-	cvCreateTrackbar("VAL max", "Control", &iHSV[5], 255);
-	cvCreateTrackbar("SAT adj", "Control", &iSatAdjust, 150);
-	cvCreateTrackbar("VAL adj", "Control", &iValAdjust, 150);
-	cvCreateTrackbar("Original", "Control", &iShowOriginal, 1);
-	cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
-	cvCreateTrackbar("Count", "Control", &iCount, 1);
-	cvCreateTrackbar("Morph", "Control", &iMorphLevel, 2);
-	cvCreateTrackbar("Debug", "Control", &iDebugLevel, 4);
-	
+	    cvCreateTrackbar("HUE min", "Control", &iHSV[0], 179);
+	    cvCreateTrackbar("HUE max", "Control", &iHSV[1], 179);
+	    cvCreateTrackbar("SAT min", "Control", &iHSV[2], 255);
+	    cvCreateTrackbar("SAT max", "Control", &iHSV[3], 255);
+	    cvCreateTrackbar("VAL min", "Control", &iHSV[4], 255);
+	    cvCreateTrackbar("VAL max", "Control", &iHSV[5], 255);
+	    cvCreateTrackbar("SAT adj", "Control", &iSatAdjust, 150);
+	    cvCreateTrackbar("VAL adj", "Control", &iValAdjust, 150);
+	    cvCreateTrackbar("Original", "Control", &iShowOriginal, 1);
+	    cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
+	    cvCreateTrackbar("Count", "Control", &iCount, 1);
+	    cvCreateTrackbar("Morph", "Control", &iMorphLevel, 2);
+	    cvCreateTrackbar("Debug", "Control", &iDebugLevel, 4);
+	}
+
 	return true;
 }
 
