@@ -31,7 +31,6 @@
 
 #define CAP_HEIGHT 512
 #define CAP_WIDTH 512
-//#define RECT_EDGE 30
 #define ENABLED 1
 #define DISABLED 0
 #define MAX_CYCLE_T 200
@@ -84,9 +83,11 @@ class ColourTracking
 	int iMorphLevel;
 	int iDebugLevel;
 	
-	// sat and val adjustment after ClickHSV
+	/*
+	// sat and val adjustment after ClickHSV (currently not used)
 	int iSatAdjust;
 	int iValAdjust;
+	*/
 	
 	// main loop delay; captured frame height; captured frame width
 	unsigned int uiDelay;
@@ -130,14 +131,18 @@ class ColourTracking
     int FindObjects(cv::Mat, std::vector<cv::Point>&, std::vector<float>&, float, float); 
     
     // correction of the results of FindObjects
+    // arguments : (amount, cycle interval, difference between start&end)
     int CorrectAmount(int, int, float);
     
     // draw circles around found objects
     void DrawCircles(cv::Mat, cv::Mat&, std::vector<cv::Point>, std::vector<float>);
-        
-    // returns timestamp closed with brackets (used in std::cout)
-    // STILL NOT IMPLEMENTED
-    std::string timestamp();
+    
+    // setup socket for UDP communication
+    void setupsocket();
+    
+    // receive and send messages via socket
+    // update buffer with current info
+    void writesocket(int);        
     
     /******************************************************************/
     
@@ -166,7 +171,8 @@ class ColourTracking
 	/********************* Public functions ***************************/
 	/******************************************************************/
 	
-	//constructor that sets default values for all parameters
+	// constructor that sets default values for all parameters
+	// also does setupsocket()
 	ColourTracking();
 	    
     // applies all the main functions (described above) on captured frame
@@ -177,24 +183,17 @@ class ColourTracking
 	
 	// run-time control panel with highgui trackbars
 	bool CreateControlWindow();
-
-	
-	void t_start(); /* set starting timepoint */
-	void t_end();   /* set end timepoint and calculate time_dif*/
 	
 	// calculate delay for the waitKey function in main.cpp
     unsigned int delay();
+    void t_start(); /* set starting timepoint */
+	void t_end();   /* set end timepoint and calculate time_dif*/
 	
 	// parse command line arguments
-	int CmdParameters(int, char**);
+	int CmdParameters(int, char**);	
 	
-	private:
-    // setup socket for UDP communication
-    void setupsocket();
-    
-    // receive and send messages through socket
-    // update buffer with current info
-    void writesocket(int);
+	// returns timestamp "[HH:MM:SS]"
+    std::string ts();
 	
 	/******************************************************************/
 };

@@ -23,37 +23,39 @@
 
 #include "ColourTracking.hpp"
 
-//#include "opencv2/core/core.hpp" included with header
 #include "opencv2/highgui/highgui.hpp"
 
 #include <iostream>
-//#include <chrono> included with header
+
 
 using namespace std;
 using namespace cv;
 
 int main(int argc, char **argv)
 {
-	ColourTracking ct;	
-	
+	ColourTracking ct;
+		
 	if (ct.CmdParameters(argc, argv) < 0) return -1; /* parse command line arguments */
+	
 	
 	VideoCapture cap(0); /* initialize camera & video capturing */
 	
 	
-    if (!cap.isOpened())
+    if (!cap.isOpened()) /* if camera failed to initialize, exit program */
     {
-         cout << " Problem loading the camera. Exiting..\n";
+         cout << ct.ts() << " Problem loading the camera. Exiting..\n";
          return -1;
     }
 
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, ct.width());   /* set width and */ 
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, ct.height()); /* height of captured frame */
 
-	cout << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) \
+	cout << ct.ts() << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) \
 	<< " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl; /* print current frame size */
 	
+	
 	ct.CreateControlWindow(); /* create control panel with trackbars */
+	
 	
 	while (true)
 	{
@@ -62,25 +64,24 @@ int main(int argc, char **argv)
 		
 		bool bSuccess = cap.read(ct.imgOriginal);
 		if (!bSuccess){
-			cout << " Problem reading from camera.\n";
+			cout << ct.ts() << " Problem reading from camera to Mat.\n";
 			return -1;
 		}
 		
-		ct.Process(3); /* the argument is the kernel size */
+		ct.Process(3); /* the argument is the kernel size for morph*/
 
 		ct.Display(); /* display original and/or thresholded frame */	
 		
-		ct.t_end(); /* end point for time measurement */
+		ct.t_end(); /* end point for time measurement, calculation of time_dif */
 		
-		if (waitKey(ct.delay()) == ESCAPE)
+		if (waitKey(ct.delay()) == ESCAPE) /* if specified key (ESC) is pressed, exit program */
 		{
-			cout << "ESC key pressed by user. Exiting..\n";
+			cout << ct.ts() << " ESC key pressed by user. Exiting..\n";
 			return -1;
 		}
 		
 	}
-	
-	
+		
 	return 0;
 }
 

@@ -24,15 +24,14 @@
 
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
-//#include "opencv2/core/core.hpp" // already defined in header
 
 #include "ColourTracking.hpp"
 
 #include <vector>
 #include <cmath>
 #include <iostream>
+#include <ctime>
 //#include <string> uncomment when implementing timestamp()
-// <chrono> also included with header
 
 /** Includes for socket communication **/
 #include <sys/types.h>
@@ -45,13 +44,28 @@ using namespace cv;
 using namespace std::chrono;
 
 
-std::string ColourTracking::timestamp()
+std::string ColourTracking::ts()
 {
-	std::string stamp = "[";
+	time_t currenttime;
+	time(&currenttime);
+	tm *curtime = localtime(&currenttime);
 	
+	std::string stamp = "["; /* start with a bracket for enclosure */
 	
+	if (curtime->tm_hour < 10) stamp.append("0"); /* append current hours */
+	stamp.append(std::to_string(curtime->tm_hour));
+	stamp.append(":");
 	
-	return stamp;
+	if (curtime->tm_min < 10) stamp.append("0"); /* append current minutes */
+	stamp.append(std::to_string(curtime->tm_min));
+	stamp.append(":");
+	
+	if (curtime->tm_sec < 10) stamp.append("0"); /* append current seconds */
+	stamp.append(std::to_string(curtime->tm_sec));
+	
+	stamp.append("]"); /* finish string up with a bracket */
+	
+	return stamp; /* return "[HH:MM:SS]" */
 }
 
 void ColourTracking::setHSV (int user[])
@@ -60,7 +74,6 @@ void ColourTracking::setHSV (int user[])
         iHSV[i] = user[i];
     }
 }
-
 
 int* ColourTracking::hsv()
 {
@@ -82,8 +95,6 @@ unsigned int ColourTracking::width()
 	return uiCaptureWidth;
 }
 
-
-// setup socket for UDP communication
 void ColourTracking::setupsocket()
 {
 	sockfd = socket(AF_INET, SOCK_DGRAM, COMM_PROTOCOL);
@@ -95,8 +106,6 @@ void ColourTracking::setupsocket()
 	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
 }
     
-// receive and send messages through socket
-// update buffer with current info
 void ColourTracking::writesocket(int amount)
 {		
 	bzero(buffer,256);
@@ -108,7 +117,7 @@ void ColourTracking::writesocket(int amount)
 		bzero(buffer,256);
 		sprintf(buffer, "%d/%d/%d/%d/%d/%d/%d", amount, iHSV[0], iHSV[1], iHSV[2], iHSV[3], iHSV[4], iHSV[5]);
 		
-		if (iDebugLevel >= 2) std::cout << "Comm buffer: " << buffer << std::endl;
+		if (iDebugLevel >= 2) std::cout << ts() << " Comm buffer: " << buffer << std::endl;
 		
 		sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
 	}
@@ -136,16 +145,16 @@ unsigned int ColourTracking::delay()
 	if (k >= DEF_INTERVAL){
 		
 		if (iDebugLevel >= 2){
-			std::cout << " [avg duration per " << k+1 << " cycles]: " << ((int) time_dif/(k+1)) << "ms\n";
+			std::cout << ts() << " Average duration per " << k << " cycles: " << ((int) time_dif/(k)) << "ms\n";
 		}
 		
-		result = (int) time_dif/(k+1); 
+		result = (int) time_dif/(k); 
 				
 		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
 		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
 		
 		if (iDebugLevel >= 2){				
-			std::cout << " Setting cycle time to: " << result << "ms\n";
+			std::cout << ts() << " Setting cycle time to: " << result << "ms\n";
 		}
 				
 		k = 0;
@@ -180,7 +189,6 @@ void ColourTracking::Display()
 	}else destroyWindow("Original");
 }
 
- // constructor that gives default values to all parameters
 ColourTracking::ColourTracking()
 {
 	iCount = ENABLED;
@@ -197,20 +205,18 @@ ColourTracking::ColourTracking()
 	uiCaptureHeight = CAP_HEIGHT;
 	uiCaptureWidth = CAP_WIDTH;
 	
-	iSatAdjust = 50;
-	iValAdjust = 50;
+//	iSatAdjust = 50;
+//	iValAdjust = 50;
 	
 	ObjectMinsize = OBJ_MINSIZE;
 	ObjectMaxsize = OBJ_MAXSIZE;
 	
-	//comm_pass = COMM_PASS;
 	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;
 	
 	setupsocket();
 
 }
-
 
 void ColourTracking::Process(int msize)
 {
@@ -237,21 +243,19 @@ void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int
 	// HSV -> binary (black&white)
 	cv::inRange(buf, cv::Scalar(hsv[0], hsv[2], hsv[4]), cv::Scalar(hsv[1], hsv[3], hsv[5]), dst);
 
-}
-    
+}    
 
 void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::Mat& dst)
 {
 	cv::Mat buf = src; /* buffer Mat on which to use erode and dilate */
 	
-	if (morph > 0)	cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
+	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
 	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size))); 	
 	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
 	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
 	
 	dst = buf;
-}
-    
+}    
 
 int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, std::vector<float>& areas, float minsize, float maxsize)
 {
@@ -294,9 +298,6 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	return centers.size();
 }
     
-// correction of the results of FindObjects
-// interval - number of cycles after which new amount is checked
-// dif - difference between new amount and average of previous X amounts (+-)
 int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 {
 	static int k = 0;
@@ -311,7 +312,7 @@ int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 
 		if (amount != prev && amount < (total/(k+1))+dif && amount >= (total/(k+1))-dif){
 			if (iDebugLevel >= 1){
-				std::cout << /* timestamp() << */ "OBJECTS: " << amount << std::endl;
+				std::cout << ts() << " " << amount << " OBJECTS FOUND.\n";
 			}
 			prev = amount;
 			k = 0;
@@ -328,7 +329,6 @@ int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 	return prev;
 }
     
-// draw circles around found objects
 void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Point> coords, std::vector<float> area)
 {
 	dst = cv::Mat::zeros(src.size(), src.type());
@@ -336,7 +336,7 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Poin
 	
 	for (unsigned int i=0; i<coords.size(); i++){
 
-		if (iDebugLevel >= 3) std::cout /*<< Timestamp() << " " */<< (i+1) << \
+		if (iDebugLevel >= 3) std::cout << ts() << " " << (i+1) << \
 		".OBJECT X:" << coords[i].x << " Y:" << coords[i].y << " AREA: " << area[i] << std::endl;
 		 
 		// circle area = pi * radius^2
@@ -357,8 +357,6 @@ bool ColourTracking::CreateControlWindow()
 	    cvCreateTrackbar("SAT max", "Control", &iHSV[3], 255);
 	    cvCreateTrackbar("VAL min", "Control", &iHSV[4], 255);
 	    cvCreateTrackbar("VAL max", "Control", &iHSV[5], 255);
-	    cvCreateTrackbar("SAT adj", "Control", &iSatAdjust, 150);
-	    cvCreateTrackbar("VAL adj", "Control", &iValAdjust, 150);
 	    cvCreateTrackbar("Original", "Control", &iShowOriginal, 1);
 	    cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
 	    cvCreateTrackbar("Count", "Control", &iCount, 1);
@@ -368,7 +366,6 @@ bool ColourTracking::CreateControlWindow()
 
 	return true;
 }
-
 
 int ColourTracking::CmdParameters(int argc, char** argv)
 {
