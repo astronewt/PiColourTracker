@@ -84,12 +84,6 @@ class ColourTracking
 	int iMorphLevel;
 	int iDebugLevel;
 	
-	/*
-	// sat and val adjustment after ClickHSV (currently not used)
-	int iSatAdjust;
-	int iValAdjust;
-	*/
-	
 	// main loop delay; captured frame height; captured frame width
 	unsigned int uiDelay;
 	unsigned int uiCaptureHeight;
@@ -171,12 +165,9 @@ class ColourTracking
     
 	/********************* Public functions ***************************/
 	/******************************************************************/
-	
-	// constructor that sets default values for all parameters
-	// also does setupsocket()
-	ColourTracking();
-	
-	/*          DEFAULT VALUES:
+		
+	/*     CONSTRUCTOR DEFAULT VALUES:
+	 * 
 	 * Object counting = ENABLED
 	 *     Morph level = DISABLED
 	 *    Display orig = DISABLED
@@ -192,7 +183,7 @@ class ColourTracking
 	 *   UDP comm pass = "objectcount"
 	 *   UDP comm port = 12015
 	 */ 
-	    
+	ColourTracking(); /* constructor declaration */    
 	    
     // applies all the main functions (described above) on captured frame
     void Process(int);

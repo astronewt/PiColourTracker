@@ -31,7 +31,6 @@
 #include <cmath>
 #include <iostream>
 #include <ctime>
-//#include <string> uncomment when implementing timestamp()
 
 /** Includes for socket communication **/
 #include <sys/types.h>
@@ -43,216 +42,6 @@
 using namespace cv;
 using namespace std::chrono;
 
-
-std::string ColourTracking::ts()
-{
-	time_t currenttime;
-	time(&currenttime);
-	tm *curtime = localtime(&currenttime);
-	
-	std::string stamp = "["; /* start with a bracket for enclosure */
-	
-	if (curtime->tm_hour < 10) stamp.append("0"); /* append current hours */
-	stamp.append(std::to_string(curtime->tm_hour));
-	stamp.append(":");
-	
-	if (curtime->tm_min < 10) stamp.append("0"); /* append current minutes */
-	stamp.append(std::to_string(curtime->tm_min));
-	stamp.append(":");
-	
-	if (curtime->tm_sec < 10) stamp.append("0"); /* append current seconds */
-	stamp.append(std::to_string(curtime->tm_sec));
-	
-	stamp.append("]"); /* finish string up with a bracket */
-	
-	return stamp; /* return "[HH:MM:SS]" */
-}
-
-void ColourTracking::setHSV (int user[])
-{
-	for (int i = 0; i < 6; i++){
-        iHSV[i] = user[i];
-    }
-}
-
-int* ColourTracking::hsv()
-{
-    return iHSV;
-}
-
-int ColourTracking::val(unsigned int k)
-{
-    return iHSV[k];
-}
-
-unsigned int ColourTracking::height()
-{
-	return uiCaptureHeight;
-}
-
-unsigned int ColourTracking::width()
-{
-	return uiCaptureWidth;
-}
-
-void ColourTracking::setupsocket()
-{
-	sockfd = socket(AF_INET, SOCK_DGRAM, COMM_PROTOCOL);
-	
-	bzero((char *) &server_addr, sizeof(server_addr));
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_addr.s_addr = INADDR_ANY;
-	server_addr.sin_port = htons(comm_port);
-	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
-}
-    
-void ColourTracking::writesocket(int amount)
-{		
-	bzero(buffer,256);
-	clientlen = sizeof(client_addr);
-	
-	recvfrom(sockfd, buffer, 256, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
-
-	if (!strcmp(buffer,comm_pass)){
-		bzero(buffer,256);
-		sprintf(buffer, "%d/%d/%d/%d/%d/%d/%d", amount, iHSV[0], iHSV[1], iHSV[2], iHSV[3], iHSV[4], iHSV[5]);
-		
-		if (iDebugLevel >= 2) std::cout << ts() << " Comm buffer: " << buffer << std::endl;
-		
-		sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
-	}
-}
-    
-    
-void ColourTracking::t_start()
-{
-	start_time = high_resolution_clock::now();
-}
-
-void ColourTracking::t_end()
-{
-	end_time = high_resolution_clock::now();
-	
-	//
-	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
-}
-
-unsigned int ColourTracking::delay()
-{
-	static unsigned int k = 0; //counter
-	static unsigned int result = uiDelay;
-	
-	if (k >= DEF_INTERVAL){
-		
-		if (iDebugLevel >= 2){
-			std::cout << ts() << " Average duration per " << k << " cycles: " << ((int) time_dif/(k)) << "ms\n";
-		}
-		
-		result = (int) time_dif/(k); 
-				
-		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
-		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
-		
-		if (iDebugLevel >= 2){				
-			std::cout << ts() << " Setting cycle time to: " << result << "ms\n";
-		}
-				
-		k = 0;
-		time_dif = 0;
-	}
-	
-	k++;
-	
-	return result;
-}
-
-void ColourTracking::nogui()
-{
-	bGUI = false;
-}
-
-void ColourTracking::Display()
-{
-    if (bGUI && iShowThresh == ENABLED){
-		
-		imshow("Thresholded Image", imgThresh); /* show the thresholded image */
-		
-	}else destroyWindow("Thresholded Image");
-	
-    if (bGUI && iShowOriginal == ENABLED){
-		
-		if (imgOriginal.size() == imgCircles.size()){
-			imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
-		}
-		imshow("Original", imgOriginal); /* show the original image */
-		
-	}else destroyWindow("Original");
-}
-
-ColourTracking::ColourTracking()
-{
-	iCount = ENABLED;
-	iMorphLevel = DISABLED;
-	iShowOriginal = DISABLED;
-	iShowThresh = DISABLED;
-	bGUI = ENABLED;
-	
-	int buffer[6] = {LHUE, HHUE, LSAT, HSAT, LVAL, HVAL};
-	setHSV(buffer);
-	
-	uiDelay = MAX_CYCLE_T - MIN_CYCLE_T;
-    iDebugLevel = DEF_DEBUG;
-	uiCaptureHeight = CAP_HEIGHT;
-	uiCaptureWidth = CAP_WIDTH;
-	
-	ObjectMinsize = OBJ_MINSIZE;
-	ObjectMaxsize = OBJ_MAXSIZE;
-	
-	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
-	comm_port = COMM_PORT;
-	
-	setupsocket();
-
-}
-
-void ColourTracking::Process(int msize)
-{
-    std::vector<cv::Point> locs;
-    std::vector<float> areas;
-    static unsigned int amountbuffer = 0;
-    
-    ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
-    
-    MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
-    
-    amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
-    writesocket(amountbuffer);
-    
-    if (amountbuffer == locs.size()) DrawCircles(imgOriginal, imgCircles, locs, areas);
-}
-
-void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
-{
-	// RGB -> HSV		
-	cv::cvtColor(src, buf, cv::COLOR_BGR2HSV);
-	if (blur) cv::GaussianBlur(buf, buf, cv::Size(5,5), 0,0);
-			
-	// HSV -> binary (black&white)
-	cv::inRange(buf, cv::Scalar(hsv[0], hsv[2], hsv[4]), cv::Scalar(hsv[1], hsv[3], hsv[5]), dst);
-
-}    
-
-void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::Mat& dst)
-{
-	cv::Mat buf = src; /* buffer Mat on which to use erode and dilate */
-	
-	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
-	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size))); 	
-	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
-	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
-	
-	dst = buf;
-}    
 
 int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, std::vector<float>& areas, float minsize, float maxsize)
 {
@@ -325,7 +114,114 @@ int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 	
 	return prev;
 }
+ 
+void ColourTracking::setupsocket()
+{
+	sockfd = socket(AF_INET, SOCK_DGRAM, COMM_PROTOCOL);
+	
+	bzero((char *) &server_addr, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = INADDR_ANY;
+	server_addr.sin_port = htons(comm_port);
+	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
+}
     
+void ColourTracking::writesocket(int amount)
+{		
+	bzero(buffer,256);
+	clientlen = sizeof(client_addr);
+	
+	recvfrom(sockfd, buffer, 256, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
+
+	if (!strcmp(buffer,comm_pass)){
+		bzero(buffer,256);
+		sprintf(buffer, "%d/%d/%d/%d/%d/%d/%d", amount, iHSV[0], iHSV[1], iHSV[2], iHSV[3], iHSV[4], iHSV[5]);
+		
+		if (iDebugLevel >= 2) std::cout << ts() << " Comm buffer: " << buffer << std::endl;
+		
+		sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
+	}
+} 
+    
+void ColourTracking::t_start()
+{
+	start_time = high_resolution_clock::now();
+}
+
+void ColourTracking::t_end()
+{
+	end_time = high_resolution_clock::now();
+	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
+}
+
+unsigned int ColourTracking::delay()
+{
+	static unsigned int k = 0; //counter
+	static unsigned int result = uiDelay;
+	
+	if (k >= DEF_INTERVAL){
+		
+		if (iDebugLevel >= 2){
+			std::cout << ts() << " Average duration per " << k << " cycles: " << ((int) time_dif/(k)) << "ms\n";
+		}
+		
+		result = (int) time_dif/(k); 
+				
+		if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
+		if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
+		
+		if (iDebugLevel >= 2){				
+			std::cout << ts() << " Setting cycle time to: " << result << "ms\n";
+		}
+				
+		k = 0;
+		time_dif = 0;
+	}
+	
+	k++;
+	
+	return result;
+}
+
+void ColourTracking::Process(int msize)
+{
+    std::vector<cv::Point> locs;
+    std::vector<float> areas;
+    static unsigned int amountbuffer = 0;
+    
+    ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
+    
+    MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
+    
+    amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
+    writesocket(amountbuffer);
+    
+    if (amountbuffer == locs.size()) DrawCircles(imgOriginal, imgCircles, locs, areas);
+}
+
+void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
+{
+	// RGB -> HSV		
+	cv::cvtColor(src, buf, cv::COLOR_BGR2HSV);
+	if (blur) cv::GaussianBlur(buf, buf, cv::Size(5,5), 0,0);
+			
+	// HSV -> binary (black&white)
+	cv::inRange(buf, cv::Scalar(hsv[0], hsv[2], hsv[4]), cv::Scalar(hsv[1], hsv[3], hsv[5]), dst);
+
+}    
+
+void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::Mat& dst)
+{
+	cv::Mat buf = src; /* buffer Mat on which to use erode and dilate */
+	
+	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
+	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size))); 	
+	if (morph > 1) cv::dilate(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
+	if (morph > 0) cv::erode(buf, buf, cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(size, size)));
+	
+	dst = buf;
+}    
+   
 void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Point> coords, std::vector<float> area)
 {
 	dst = cv::Mat::zeros(src.size(), src.type());
@@ -347,6 +243,55 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Poin
 	
 }
 
+ColourTracking::ColourTracking()
+{
+	iCount = ENABLED;
+	iMorphLevel = DISABLED;
+	iShowOriginal = DISABLED;
+	iShowThresh = DISABLED;
+	bGUI = ENABLED;
+	
+	int buffer[6] = {LHUE, HHUE, LSAT, HSAT, LVAL, HVAL};
+	setHSV(buffer);
+	
+	uiDelay = MAX_CYCLE_T - MIN_CYCLE_T;
+    iDebugLevel = DEF_DEBUG;
+	uiCaptureHeight = CAP_HEIGHT;
+	uiCaptureWidth = CAP_WIDTH;
+	
+	ObjectMinsize = OBJ_MINSIZE;
+	ObjectMaxsize = OBJ_MAXSIZE;
+	
+	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
+	comm_port = COMM_PORT;
+	
+	setupsocket();
+
+}
+
+void ColourTracking::nogui()
+{
+	bGUI = false;
+}
+
+void ColourTracking::Display()
+{
+    if (bGUI && iShowThresh == ENABLED){
+		
+		imshow("Thresholded Image", imgThresh); /* show the thresholded image */
+		
+	}else destroyWindow("Thresholded Image");
+	
+    if (bGUI && iShowOriginal == ENABLED){
+		
+		if (imgOriginal.size() == imgCircles.size()){
+			imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
+		}
+		imshow("Original", imgOriginal); /* show the original image */
+		
+	}else destroyWindow("Original");
+}
+
 bool ColourTracking::CreateControlWindow()
 {
 	if (bGUI){
@@ -366,6 +311,57 @@ bool ColourTracking::CreateControlWindow()
 	}
 
 	return true;
+}
+
+std::string ColourTracking::ts()
+{
+	time_t currenttime;
+	time(&currenttime);
+	tm *curtime = localtime(&currenttime);
+	
+	std::string stamp = "["; /* start with a bracket for enclosure */
+	
+	if (curtime->tm_hour < 10) stamp.append("0"); /* append current hours */
+	stamp.append(std::to_string(curtime->tm_hour));
+	stamp.append(":");
+	
+	if (curtime->tm_min < 10) stamp.append("0"); /* append current minutes */
+	stamp.append(std::to_string(curtime->tm_min));
+	stamp.append(":");
+	
+	if (curtime->tm_sec < 10) stamp.append("0"); /* append current seconds */
+	stamp.append(std::to_string(curtime->tm_sec));
+	
+	stamp.append("]"); /* finish string up with a bracket */
+	
+	return stamp; /* return "[HH:MM:SS]" */
+}
+
+void ColourTracking::setHSV (int user[])
+{
+	for (int i = 0; i < 6; i++){
+        iHSV[i] = user[i];
+    }
+}
+
+int* ColourTracking::hsv()
+{
+    return iHSV;
+}
+
+int ColourTracking::val(unsigned int k)
+{
+    return iHSV[k];
+}
+
+unsigned int ColourTracking::height()
+{
+	return uiCaptureHeight;
+}
+
+unsigned int ColourTracking::width()
+{
+	return uiCaptureWidth;
 }
 
 int ColourTracking::CmdParameters(int argc, char** argv)
