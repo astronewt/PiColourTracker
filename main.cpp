@@ -50,8 +50,9 @@ int main(int argc, char **argv)
 	cap.set(CV_CAP_PROP_FRAME_WIDTH, ct.width());   /* set width and */ 
 	cap.set(CV_CAP_PROP_FRAME_HEIGHT, ct.height()); /* height of captured frame */
 
-	cout << ct.ts() << " Camera frame HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT) \
-	<< " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl; /* print current frame size */
+	cout << ct.ts() << "Camera frame ";   /* print current frame size */
+	cout << " HEIGHT:" << cap.get(CV_CAP_PROP_FRAME_HEIGHT);
+	cout << " WIDTH:" << cap.get(CV_CAP_PROP_FRAME_WIDTH) << endl; 
 	
 	
 	ct.CreateControlWindow(); /* create control panel with trackbars */

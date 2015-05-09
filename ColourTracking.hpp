@@ -47,6 +47,7 @@
 #define DEF_INTERVAL 100
 #define PI_VALUE 3.1415926535
 #define DEFAULT 3
+#define DEF_DEBUG 1
 
 // approximate high hues of colours
 #define ORANGE 22
@@ -174,6 +175,24 @@ class ColourTracking
 	// constructor that sets default values for all parameters
 	// also does setupsocket()
 	ColourTracking();
+	
+	/*          DEFAULT VALUES:
+	 * Object counting = ENABLED
+	 *     Morph level = DISABLED
+	 *    Display orig = DISABLED
+	 *  Display thresh = DISABLED
+	 *             GUI = ENABLED
+	 *      HSV values = 0, 179, 0, 255, 0, 255
+	 *     Cycle delay = 150ms
+	 *     Debug level = 1
+	 *  Capture height = 512 px
+	 *   Capture width = 512 px
+	 * Max object size = 40000 sqpx (200x200)  Considering 512x512 frame
+	 * Min object size = 2500 sqpx (50x50)     which is 262144 square pixels.
+	 *   UDP comm pass = "objectcount"
+	 *   UDP comm port = 12015
+	 */ 
+	    
 	    
     // applies all the main functions (described above) on captured frame
     void Process(int);

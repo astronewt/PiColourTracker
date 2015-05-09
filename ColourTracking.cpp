@@ -201,12 +201,9 @@ ColourTracking::ColourTracking()
 	setHSV(buffer);
 	
 	uiDelay = MAX_CYCLE_T - MIN_CYCLE_T;
-    iDebugLevel = DISABLED;
+    iDebugLevel = DEF_DEBUG;
 	uiCaptureHeight = CAP_HEIGHT;
 	uiCaptureWidth = CAP_WIDTH;
-	
-//	iSatAdjust = 50;
-//	iValAdjust = 50;
 	
 	ObjectMinsize = OBJ_MINSIZE;
 	ObjectMaxsize = OBJ_MAXSIZE;
@@ -336,8 +333,12 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Poin
 	
 	for (unsigned int i=0; i<coords.size(); i++){
 
-		if (iDebugLevel >= 3) std::cout << ts() << " " << (i+1) << \
-		".OBJECT X:" << coords[i].x << " Y:" << coords[i].y << " AREA: " << area[i] << std::endl;
+		if (iDebugLevel >= 3) {
+			std::cout << ts() << " " << (i+1);
+		    std::cout << ".OBJECT X:" << coords[i].x;
+		    std::cout << " Y:" << coords[i].y;
+		    std::cout << " AREA: " << area[i] << std::endl;
+	    }
 		 
 		// circle area = pi * radius^2
 		rad = sqrt(area[i]/PI_VALUE);
