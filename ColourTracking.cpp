@@ -259,8 +259,8 @@ ColourTracking::ColourTracking()
 	uiCaptureHeight = CAP_HEIGHT;
 	uiCaptureWidth = CAP_WIDTH;
 	
-	ObjectMinsize = OBJ_MINSIZE;
-	ObjectMaxsize = OBJ_MAXSIZE;
+	ObjectMinsize = (uiCaptureHeight/15) * (uiCaptureWidth/15); //OBJ_MINSIZE;
+	ObjectMaxsize = (uiCaptureHeight/5) * (uiCaptureWidth/5); //OBJ_MAXSIZE;
 	
 	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;
