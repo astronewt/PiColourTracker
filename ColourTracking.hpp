@@ -96,7 +96,7 @@ class ColourTracking
 	// parameters for use in UDP communication
 	char comm_pass[256];
 	unsigned int comm_port;
-	int objectamount;
+	//int objectamount;
 	
 	// chrono time measuring variables
 	std::chrono::high_resolution_clock::time_point start_time;
@@ -107,8 +107,24 @@ class ColourTracking
     int sockfd; /* socket file descriptor */
 	struct sockaddr_in server_addr, client_addr; /* server & client address */
 	socklen_t clientlen; /* length of client address */
-	char buffer[256];
-	
+	char CommPassBuffer[64];
+	char CommSendBuffer[2048];
+
+	// currently tracked colour ID
+	int ClrID;
+
+	 
+//	struct
+//	{
+//		int ind; /* object index */
+//		int x; /* x coord */
+//		int y; /* y coord */
+//		int s; /* area value */
+
+//	}Object;
+
+//	std::vector<Object> objects;
+
 	/******************************************************************/
 	
 	
@@ -132,13 +148,17 @@ class ColourTracking
     // draw circles around found objects
     void DrawCircles(cv::Mat, cv::Mat&, std::vector<cv::Point>, std::vector<float>);
     
-    // setup socket for UDP communication
-    void setupsocket();
+    // Information transmission via UDP
+    void setupsocket();/* bind socket */
+	void recvsend(); /* receive and send information back (if correct pass) */
+    void writebuffer(std::vector<cv::Point>,\
+	       std::vector<float>, unsigned int); /* write useful information to buffer */   
     
-    // receive and send messages via socket
-    // update buffer with current info
-    void writesocket(int);        
-    
+    // Identify as to approximately what colour is currently being tracked
+	void getClrID();
+	
+
+	void disablegui(); /* set GUI parameter to false */
     /******************************************************************/
     
     
@@ -156,7 +176,7 @@ class ColourTracking
     unsigned int height(); /* return captured frame height */
 	unsigned int width();
 	
-    void nogui(); /* set GUI parameter to false */
+    
    
 
     /******************************************************************/

@@ -31,6 +31,7 @@
 #include <cmath>
 #include <iostream>
 #include <ctime>
+//#include <cstdlib> /* for itoa */
 
 /** Includes for socket communication **/
 #include <sys/types.h>
@@ -125,23 +126,79 @@ void ColourTracking::setupsocket()
 	server_addr.sin_port = htons(comm_port);
 	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
 }
+
+void ColourTracking::writebuffer(std::vector<cv::Point> xy, std::vector<float> areas, unsigned int amount)
+{
+	bzero(CommSendBuffer, 2048); /* flush send buffer */
+	
+	if (iCount != 0){
+		std::string amt = std::to_string(amount);
+		std::string time = ts();
+			
+		//strncpy(CommSendBuffer, itoa(ClrID), ); /* append ID of currently tracked colour (needs client-side interpretation) */
+//		strcpy(CommSendBuffer, "<start>");
+		
+		strcat(CommSendBuffer, "<time>"); /* append timestamp to sent message */
+		strncat(CommSendBuffer, time.c_str(), time.size());  
+		strcat(CommSendBuffer, "</time>");
+		
+		strcat(CommSendBuffer, "<a>"); 
+		strncat(CommSendBuffer, amt.c_str(), amt.size()); /* append object amount */
+		strcat(CommSendBuffer, "</a>\n");
+		
+		
+		
+		for (unsigned int i = 0; i < amount; i++){
+			
+			std::string ind = std::to_string(i); /* convert object index to string */
+			std::string x = std::to_string(xy[i].x); /* convert x coord to string */
+			std::string y = std::to_string(xy[i].y); /* convert y coordinate to string */
+			std::string s = std::to_string((int) areas[i]); /* convert area to string */
+			
+			strcat(CommSendBuffer, "<i>");
+			strncat(CommSendBuffer, ind.c_str(), ind.size());  /* append object index */
+			strcat(CommSendBuffer, "</i>");
+			
+			strcat(CommSendBuffer, "<x>");
+			strncat(CommSendBuffer, x.c_str(), x.size());   /* append x coordinate of object */
+			strcat(CommSendBuffer, "</x>");
+			
+			strcat(CommSendBuffer, "<y>");
+			strncat(CommSendBuffer, y.c_str(), y.size());  /* append y coordinate of object */
+			strcat(CommSendBuffer, "</y>");
+			
+			strcat(CommSendBuffer, "<S>");
+			strncat(CommSendBuffer, s.c_str(), s.size());  /* append area value of object */
+			strcat(CommSendBuffer, "</S>\n");
+		
+		}
+		strcat(CommSendBuffer, "\0");
+	}
+	else strcpy(CommSendBuffer, "<start>NOT_COUNTING<end>\n");
+	
+	if (iDebugLevel >= 3){
+		std::cout << ts() << " Sending: " << CommSendBuffer;
+		std::cout << "\n" << ts() << "CommSendBuffer length: " << strlen(CommSendBuffer) << std::endl;
+	}
+}
     
-void ColourTracking::writesocket(int amount)
+void ColourTracking::recvsend()
 {		
-	bzero(buffer,256);
+	bzero(CommPassBuffer,64); /* flush pass buffer */
 	clientlen = sizeof(client_addr);
 	
-	recvfrom(sockfd, buffer, 256, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
+	recvfrom(sockfd, CommPassBuffer, 64, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
 
-	if (!strcmp(buffer,comm_pass)){
-		bzero(buffer,256);
-		sprintf(buffer, "%d/%d/%d/%d/%d/%d/%d", amount, iHSV[0], iHSV[1], iHSV[2], iHSV[3], iHSV[4], iHSV[5]);
-		
-		if (iDebugLevel >= 2) std::cout << ts() << " Comm buffer: " << buffer << std::endl;
-		
-		sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
+	if (!strcmp(CommPassBuffer,comm_pass)){
+
+		sendto(sockfd, CommSendBuffer, strlen(CommSendBuffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
 	}
 } 
+
+void ColourTracking::getClrID()
+{
+	
+}
     
 void ColourTracking::t_start()
 {
@@ -152,6 +209,7 @@ void ColourTracking::t_end()
 {
 	end_time = high_resolution_clock::now();
 	time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
+	if (iDebugLevel == 2) std::cout << "Execution time this cycle: " << (duration_cast<milliseconds> (end_time - start_time).count()) << "ms\n";
 }
 
 unsigned int ColourTracking::delay()
@@ -190,11 +248,16 @@ void ColourTracking::Process(int msize)
     static unsigned int amountbuffer = 0;
     
     ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
+//    getClrID(); /* assign ID to guess which colour is tracked (currently not implemented 12.05.2015) */
     
     MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
     
-    amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
-    writesocket(amountbuffer);
+    if (iCount > 0){
+		amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
+    }
+    
+    writebuffer(locs, areas, amountbuffer); /* write useful info to buffer */
+    recvsend();    /* transmit buffer via UDP */
     
     if (amountbuffer == locs.size()) DrawCircles(imgOriginal, imgCircles, locs, areas);
 }
@@ -269,7 +332,7 @@ ColourTracking::ColourTracking()
 
 }
 
-void ColourTracking::nogui()
+void ColourTracking::disablegui()
 {
 	bGUI = false;
 }
@@ -387,7 +450,7 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 					}
 			} 
 			else if (!std::strcmp(argv[j],"-nogui")){
-					nogui();
+					disablegui();
 			}
 			else if (!std::strcmp(argv[j],"-hue")){
 				iHSV[0] = std::atoi(argv[j+1]);
