@@ -43,7 +43,7 @@
 using namespace cv;
 using namespace std::chrono;
 
-
+/*
 int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, std::vector<float>& areas, float minsize, float maxsize)
 {
 	cv::Mat imgBuffer8u;
@@ -55,12 +55,12 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 	
 	
-	std::vector<cv::Moments> mv; /* temporary moment vector */
-	std::vector<float> sv; /* temporary area vector */
-	std::vector<cv::Point> mc; /* temporary mass center vector (location) */
+	std::vector<cv::Moments> mv; // temporary moment vector 
+	std::vector<float> sv; // temporary area vector 
+	std::vector<cv::Point> mc; // temporary mass center vector (location) 
 	
 	
-	for (unsigned int i = 0; i < contours.size(); i++){ /* get moments of objects */
+	for (unsigned int i = 0; i < contours.size(); i++){ // get moments of objects 
 
 		sv.push_back (contourArea(contours[i]));
 
@@ -84,7 +84,108 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	// returns number of mass centers (aka objects)
 	return centers.size();
 }
-    
+*/
+
+int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize)
+{
+	cv::Mat imgBuffer8u;
+			
+	src.convertTo(imgBuffer8u, CV_8U);
+			
+	std::vector<std::vector<cv::Point> > contours;
+	
+	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+	
+	newobjects.clear(); // clear vector to make room for new ones
+	
+	std::vector<cv::Moments> mv; // temporary moment vector 
+	std::vector<float> sv; // temporary area vector 
+	std::vector<cv::Point> mc; // temporary mass center vector (location) 
+	
+	
+	for (unsigned int i = 0; i < contours.size(); i++){ // get moments of objects 
+
+		sv.push_back (contourArea(contours[i]));
+
+
+		if (sv.back() >= minsize && sv.back() <= maxsize){
+			mv.push_back (cv::moments(contours[i], false));
+//			IDcounter++;
+		}
+		else sv.pop_back();
+		
+	}
+//	areas = sv;
+	
+	
+	// get mass centers and create new objects in one loop
+	for (unsigned int i = 0; i < sv.size(); i++){
+		
+		mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
+		newobjects.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i]));
+	}
+//	centers = mc;
+	
+	
+	// returns number of mass centers (aka objects)
+	return newobjects.size();
+}
+
+void ColourTracking::HandleNewObjects(std::vector<Object> a, std::vector<Object> b)
+{
+	if (areaError > ObjectMaxsize) areaError = ObjectMaxsize; /* error values fault check*/
+	if (areaError < ObjectMinsize) areaError = ObjectMinsize;
+	if (xError < 0) xError = 0;
+	if (xError > uiCaptureWidth) xError = uiCaptureWidth;
+	if (yError < 0) yError = 0;
+	if (yError > uiCaptureHeight) yError = uiCaptureHeight;
+	
+	
+	/* add new objects */
+	bool bObjectExists = false;
+	
+	for (int i = 0; i < a.size(); i++){
+		for (int j = 0; j < b.size(); j++){
+			
+			if (a[i].x >= (b[j].x - xError) && a[i].x <= (b[j].x + xError)) { /* check if x coordinate fits in margin */
+				if (a[i].y >= (b[j].y - yError) && a[i].y <= (b[j].y + yError)) { /* check if y coordinate fits in margin */
+					if (a[i].area >= (b[j].area - areaError) && a[i].area <= (b[j].area + areaError)){ /* check if object's area fits in margin */
+						
+						bObjectExists = true;
+						break;
+						
+					} else bObjectExists = false; b[j].rm_counter++; // areas didn't match even with error margin
+				} else bObjectExists = false; b[j].rm_counter++;
+			} else bObjectExists = false; b[j].rm_counter++;
+		}
+		
+		a[i].index = IDcounter;
+		IDcounter++;
+		
+		if (!bObjectExists) b.push_back (a[i]); // add new object to existing objects
+
+	}
+	
+	/* delete if non-existing objects */
+	bool allExist = false;
+	
+	while (!allExist){
+
+		for (unsigned int i = 0; i < b.size(); i++){
+//			std::cout << "b[" << i << "].rm_counter = " << b[i].rm_counter << std::endl;
+			if (b[i].rm_counter >= 10){
+				b.erase(b.begin()+i);
+				break;
+			}
+			if (i == (b.size()-1) && b[i].rm_counter < 10) allExist = true;
+		}
+		
+	}
+	
+	if (iDebugLevel == 2) std::cout << ts() << "Existing objects: " << existingobjects.size() << std::endl;
+	
+}
+
 int ColourTracking::CorrectAmount(int amount, int interval, float dif)
 {
 	static int k = 0;
@@ -127,12 +228,12 @@ void ColourTracking::setupsocket()
 	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
 }
 
-void ColourTracking::writebuffer(std::vector<cv::Point> xy, std::vector<float> areas, unsigned int amount)
+void ColourTracking::writebuffer(std::vector<Object> obj)
 {
 	bzero(CommSendBuffer, 2048); /* flush send buffer */
 	
 	if (iCount != 0){
-		std::string amt = std::to_string(amount);
+		std::string amt = std::to_string(obj.size());
 		std::string time = ts();
 			
 		//strncpy(CommSendBuffer, itoa(ClrID), ); /* append ID of currently tracked colour (needs client-side interpretation) */
@@ -148,12 +249,12 @@ void ColourTracking::writebuffer(std::vector<cv::Point> xy, std::vector<float> a
 		
 		
 		
-		for (unsigned int i = 0; i < amount; i++){
+		for (unsigned int i = 0; i < obj.size(); i++){
 			
-			std::string ind = std::to_string(i); /* convert object index to string */
-			std::string x = std::to_string(xy[i].x); /* convert x coord to string */
-			std::string y = std::to_string(xy[i].y); /* convert y coordinate to string */
-			std::string s = std::to_string((int) areas[i]); /* convert area to string */
+			std::string ind = std::to_string(obj[i].index); /* convert object index to string */
+			std::string x = std::to_string(obj[i].x); /* convert x coord to string */
+			std::string y = std::to_string(obj[i].y); /* convert y coordinate to string */
+			std::string s = std::to_string((int) obj[i].area); /* convert area to string */
 			
 			strcat(CommSendBuffer, "<i>");
 			strncat(CommSendBuffer, ind.c_str(), ind.size());  /* append object index */
@@ -176,7 +277,7 @@ void ColourTracking::writebuffer(std::vector<cv::Point> xy, std::vector<float> a
 	}
 	else strcpy(CommSendBuffer, "<start>NOT_COUNTING<end>\n");
 	
-	if (iDebugLevel >= 3){
+	if (iDebugLevel == 3){
 		std::cout << ts() << " Sending: " << CommSendBuffer;
 		std::cout << "\n" << ts() << "CommSendBuffer length: " << strlen(CommSendBuffer) << std::endl;
 	}
@@ -243,8 +344,8 @@ unsigned int ColourTracking::delay()
 
 void ColourTracking::Process(int msize)
 {
-    std::vector<cv::Point> locs;
-    std::vector<float> areas;
+//    std::vector<cv::Point> locs;
+//    std::vector<float> areas;
     static unsigned int amountbuffer = 0;
     
     ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
@@ -253,13 +354,19 @@ void ColourTracking::Process(int msize)
     MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
     
     if (iCount > 0){
-		amountbuffer = CorrectAmount(FindObjects(imgThresh, locs, areas, ObjectMinsize, ObjectMaxsize), 20, 0.25);
-    }
+		
+		amountbuffer = CorrectAmount(FindObjects(imgThresh, ObjectMinsize, ObjectMaxsize), 20, 0.25);
+		if (!existingobjects.empty()) HandleNewObjects(newobjects, existingobjects);
+			 else existingobjects = newobjects;
+		
+		writebuffer(existingobjects); /* write useful info to buffer */
+		recvsend();    /* transmit buffer via UDP */
+		
+	} else IDcounter = 0;
+	
+	if (IDcounter > 65000) IDcounter = 0;
     
-    writebuffer(locs, areas, amountbuffer); /* write useful info to buffer */
-    recvsend();    /* transmit buffer via UDP */
-    
-    if (amountbuffer == locs.size()) DrawCircles(imgOriginal, imgCircles, locs, areas);
+    if (amountbuffer == existingobjects.size()) DrawCircles(imgOriginal, imgCircles, existingobjects);
 }
 
 void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
@@ -285,23 +392,23 @@ void ColourTracking::MorphImage(unsigned int morph, int size, cv::Mat src, cv::M
 	dst = buf;
 }    
    
-void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<cv::Point> coords, std::vector<float> area)
+void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> obj)
 {
 	dst = cv::Mat::zeros(src.size(), src.type());
 	float rad;
 	
-	for (unsigned int i=0; i<coords.size(); i++){
+	for (unsigned int i=0; i<obj.size(); i++){
 
 		if (iDebugLevel >= 3) {
 			std::cout << ts() << " " << (i+1);
-		    std::cout << ".OBJECT X:" << coords[i].x;
-		    std::cout << " Y:" << coords[i].y;
-		    std::cout << " AREA: " << area[i] << std::endl;
+		    std::cout << ".OBJECT X:" << obj[i].x;
+		    std::cout << " Y:" << obj[i].y;
+		    std::cout << " AREA: " << obj[i].area << std::endl;
 	    }
 		 
 		// circle area = pi * radius^2
-		rad = sqrt(area[i]/PI_VALUE);
-		cv::circle(dst,coords[i],rad, cv::Scalar(0,0,255), 2, 8, 0);
+		rad = sqrt(obj[i].area/PI_VALUE);
+		cv::circle(dst,cv::Point(obj[i].x,obj[i].y), rad, cv::Scalar(0,0,255), 2, 8, 0);
 	}
 	
 }
@@ -324,6 +431,10 @@ ColourTracking::ColourTracking()
 	
 	ObjectMinsize = (uiCaptureHeight/15) * (uiCaptureWidth/15); //OBJ_MINSIZE;
 	ObjectMaxsize = (uiCaptureHeight/5) * (uiCaptureWidth/5); //OBJ_MAXSIZE;
+	
+	xError = 10;
+	yError = 10;
+	areaError = 2000;
 	
 	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;

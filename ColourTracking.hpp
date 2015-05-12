@@ -107,23 +107,41 @@ class ColourTracking
     int sockfd; /* socket file descriptor */
 	struct sockaddr_in server_addr, client_addr; /* server & client address */
 	socklen_t clientlen; /* length of client address */
-	char CommPassBuffer[64];
-	char CommSendBuffer[2048];
+	char CommPassBuffer[64]; /* message received from client */
+	char CommSendBuffer[2048]; /* message sent to client */
 
 	// currently tracked colour ID
 	int ClrID;
+    
+	// struct for storing objects and their parameters in memory
+	struct Object
+	{
+		unsigned int index; /* object index */
+		int x; /* x coord */
+		int y; /* y coord */
+		int area; /* area value */
+		int rm_counter; /* if this reaches X, the object is removed */
 
-	 
-//	struct
-//	{
-//		int ind; /* object index */
-//		int x; /* x coord */
-//		int y; /* y coord */
-//		int s; /* area value */
+		Object(unsigned int newindex, int newx, int newy, int newarea) 
+		{ 
+			index = newindex;
+			x = newx;
+			y = newy;
+			area = newarea;
+			rm_counter = 0; /* set remove flag when created */
+		} 
 
-//	}Object;
+	};
 
-//	std::vector<Object> objects;
+	int IDcounter;
+	
+	std::vector<Object> existingobjects;
+	std::vector<Object> newobjects;
+
+	int xError;
+	int yError;
+	int areaError;
+	int ExistingMax;
 
 	/******************************************************************/
 	
@@ -139,26 +157,27 @@ class ColourTracking
     void MorphImage(unsigned int, int, cv::Mat, cv::Mat&);
     
     // create vectors for moments, areas and mass centers
-    int FindObjects(cv::Mat, std::vector<cv::Point>&, std::vector<float>&, float, float); 
+    int FindObjects(cv::Mat, float, float); 
     
     // correction of the results of FindObjects
     // arguments : (amount, cycle interval, difference between start&end)
     int CorrectAmount(int, int, float);
     
     // draw circles around found objects
-    void DrawCircles(cv::Mat, cv::Mat&, std::vector<cv::Point>, std::vector<float>);
+    void DrawCircles(cv::Mat, cv::Mat&, std::vector<Object>);
     
     // Information transmission via UDP
     void setupsocket();/* bind socket */
 	void recvsend(); /* receive and send information back (if correct pass) */
-    void writebuffer(std::vector<cv::Point>,\
-	       std::vector<float>, unsigned int); /* write useful information to buffer */   
+    void writebuffer(std::vector<Object>); /* write useful information to buffer */   
     
     // Identify as to approximately what colour is currently being tracked
 	void getClrID();
-	
 
 	void disablegui(); /* set GUI parameter to false */
+
+	// arg 1 - new objects, arg 2 - existing objects
+	void HandleNewObjects(std::vector<Object>, std::vector<Object>);
     /******************************************************************/
     
     
