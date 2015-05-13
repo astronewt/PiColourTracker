@@ -1,7 +1,7 @@
 /*
  * ColourTracking.hpp
  * 
- * Copyright 2015 Carl Ivask <carl@vaarikakook>
+ * Copyright 2015 Carl Ivask
  * 
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -111,7 +111,7 @@ class ColourTracking
 	char CommSendBuffer[2048]; /* message sent to client */
 
 	// currently tracked colour ID
-	int ClrID;
+	//int ClrID;
     
 	// struct for storing objects and their parameters in memory
 	struct Object
@@ -120,28 +120,45 @@ class ColourTracking
 		int x; /* x coord */
 		int y; /* y coord */
 		int area; /* area value */
-		int rm_counter; /* if this reaches X, the object is removed */
+		int rm_counter; /* if this reaches 0, the object is removed */
+		int cm; // coordinate margin
+//		bool tbr; // to re removed
 
-		Object(unsigned int newindex, int newx, int newy, int newarea) 
+		Object(unsigned int newindex, int newx, int newy, int newarea, int mar) 
 		{ 
 			index = newindex;
 			x = newx;
 			y = newy;
 			area = newarea;
-			rm_counter = 0; /* set remove flag when created */
+			rm_counter = 10;
+			cm = mar;
+//			tbr = false;
 		} 
+		
+		// return true if duplicate (this value used for vector cleanup)
+		bool operator==(const Object& p) const
+		{
+			if (x <= (p.x+cm) && x >= (p.x-cm)){
+				if (y <= (p.y+cm) && y >= (p.y-cm)){
+						
+					// object appears to be a duplicate
+					return true;
+					
+				}
+			}
+			// object appears to be unique
+			return false;
+		}
 
 	};
-
-	int IDcounter;
 	
-	std::vector<Object> existingobjects;
-	std::vector<Object> newobjects;
+	unsigned int IDcounter; // give each new object a new ID
+	unsigned int rm_counter_max;
+	
+	std::vector<Object> vecExistingObjects;
+	std::vector<Object> vecFoundObjects;
 
-	int xError;
-	int yError;
-	int areaError;
-	int ExistingMax;
+	int coordm; // coordinate duplicate margin
 
 	/******************************************************************/
 	
@@ -157,7 +174,7 @@ class ColourTracking
     void MorphImage(unsigned int, int, cv::Mat, cv::Mat&);
     
     // create vectors for moments, areas and mass centers
-    int FindObjects(cv::Mat, float, float); 
+    int FindObjects(cv::Mat, float, float, std::vector<Object>&); 
     
     // correction of the results of FindObjects
     // arguments : (amount, cycle interval, difference between start&end)
@@ -168,16 +185,19 @@ class ColourTracking
     
     // Information transmission via UDP
     void setupsocket();/* bind socket */
-	void recvsend(); /* receive and send information back (if correct pass) */
-    void writebuffer(std::vector<Object>); /* write useful information to buffer */   
+	void recvsend(char*, char*); /* receive and send information back (if correct pass) */
+    void writebuffer(std::vector<Object>, char*); /* write useful information to buffer */   
     
     // Identify as to approximately what colour is currently being tracked
-	void getClrID();
+	//void getClrID();
 
 	void disablegui(); /* set GUI parameter to false */
 
-	// arg 1 - new objects, arg 2 - existing objects
-	void HandleNewObjects(std::vector<Object>, std::vector<Object>);
+	// work with object vectors
+	unsigned int AddNewObjects(std::vector<Object> found, std::vector<Object>& exist);
+	void NonexistingObjects(std::vector<Object> found, std::vector<Object>& exist);
+	unsigned int CleanupObjects(std::vector<Object>& exist);
+	bool FitMargin(int ax, int ay, int bx, int by);
     /******************************************************************/
     
     

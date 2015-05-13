@@ -31,7 +31,6 @@
 #include <cmath>
 #include <iostream>
 #include <ctime>
-//#include <cstdlib> /* for itoa */
 
 /** Includes for socket communication **/
 #include <sys/types.h>
@@ -43,8 +42,8 @@
 using namespace cv;
 using namespace std::chrono;
 
-/*
-int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, std::vector<float>& areas, float minsize, float maxsize)
+
+int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize, std::vector<Object>& found)
 {
 	cv::Mat imgBuffer8u;
 			
@@ -54,49 +53,7 @@ int ColourTracking::FindObjects(cv::Mat src, std::vector<cv::Point>& centers, st
 	
 	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 	
-	
-	std::vector<cv::Moments> mv; // temporary moment vector 
-	std::vector<float> sv; // temporary area vector 
-	std::vector<cv::Point> mc; // temporary mass center vector (location) 
-	
-	
-	for (unsigned int i = 0; i < contours.size(); i++){ // get moments of objects 
-
-		sv.push_back (contourArea(contours[i]));
-
-		if (sv.back() >= minsize && sv.back() <= maxsize){
-			mv.push_back (cv::moments(contours[i], false));
-		}
-		else sv.pop_back();
-		
-	}
-	areas = sv;
-	
-	
-	// get mass centers
-	for (unsigned int i = 0; i < sv.size(); i++){
-		
-		mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
-	}
-	centers = mc;
-	
-	
-	// returns number of mass centers (aka objects)
-	return centers.size();
-}
-*/
-
-int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize)
-{
-	cv::Mat imgBuffer8u;
-			
-	src.convertTo(imgBuffer8u, CV_8U);
-			
-	std::vector<std::vector<cv::Point> > contours;
-	
-	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
-	
-	newobjects.clear(); // clear vector to make room for new ones
+	found.clear(); // clear vector to make room for new ones
 	
 	std::vector<cv::Moments> mv; // temporary moment vector 
 	std::vector<float> sv; // temporary area vector 
@@ -122,68 +79,103 @@ int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize)
 	for (unsigned int i = 0; i < sv.size(); i++){
 		
 		mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
-		newobjects.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i]));
+		found.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i], coordm));
 	}
 //	centers = mc;
 	
-	
 	// returns number of mass centers (aka objects)
-	return newobjects.size();
+	return found.size();
 }
 
-void ColourTracking::HandleNewObjects(std::vector<Object> a, std::vector<Object> b)
+unsigned int ColourTracking::AddNewObjects(std::vector<Object> found, std::vector<Object>& exist)
 {
-	if (areaError > ObjectMaxsize) areaError = ObjectMaxsize; /* error values fault check*/
-	if (areaError < ObjectMinsize) areaError = ObjectMinsize;
-	if (xError < 0) xError = 0;
-	if (xError > uiCaptureWidth) xError = uiCaptureWidth;
-	if (yError < 0) yError = 0;
-	if (yError > uiCaptureHeight) yError = uiCaptureHeight;
+	bool isnew = true;
 	
-	
-	/* add new objects */
-	bool bObjectExists = false;
-	
-	for (int i = 0; i < a.size(); i++){
-		for (int j = 0; j < b.size(); j++){
+	if (!exist.empty()){	
+		
+		// add currently found objects to vecExistingObjects
+		for (unsigned int i = 0; i < found.size(); i++){
 			
-			if (a[i].x >= (b[j].x - xError) && a[i].x <= (b[j].x + xError)) { /* check if x coordinate fits in margin */
-				if (a[i].y >= (b[j].y - yError) && a[i].y <= (b[j].y + yError)) { /* check if y coordinate fits in margin */
-					if (a[i].area >= (b[j].area - areaError) && a[i].area <= (b[j].area + areaError)){ /* check if object's area fits in margin */
-						
-						bObjectExists = true;
+			isnew = true;
+			
+			for (unsigned int j = 0; j < exist.size(); j++){
+
+				if (found[i].x >= exist[j].x-coordm && found[i].x <= exist[j].x+coordm){
+					if (found[i].y >= exist[j].y-coordm && found[i].y <= exist[j].y+coordm){
+				//if (FitMargin(found[i].x, found[i].y, exist[j].x, exist[j].y)){ //for some reason this will not work here
+				
+						isnew = false; 
 						break;
-						
-					} else bObjectExists = false; b[j].rm_counter++; // areas didn't match even with error margin
-				} else bObjectExists = false; b[j].rm_counter++;
-			} else bObjectExists = false; b[j].rm_counter++;
-		}
-		
-		a[i].index = IDcounter;
-		IDcounter++;
-		
-		if (!bObjectExists) b.push_back (a[i]); // add new object to existing objects
-
-	}
-	
-	/* delete if non-existing objects */
-	bool allExist = false;
-	
-	while (!allExist){
-
-		for (unsigned int i = 0; i < b.size(); i++){
-//			std::cout << "b[" << i << "].rm_counter = " << b[i].rm_counter << std::endl;
-			if (b[i].rm_counter >= 10){
-				b.erase(b.begin()+i);
-				break;
+					}
+				}
 			}
-			if (i == (b.size()-1) && b[i].rm_counter < 10) allExist = true;
+
+			// is a new object, add to existing objects
+			if (isnew){ 
+				
+				IDcounter++;
+				found[i].index = IDcounter;
+				
+				exist.push_back (found[i]);
+			}
+		}
+	} else exist = found;
+	
+	// return size of vecExistingObjects
+	return exist.size();
+}
+
+void ColourTracking::NonexistingObjects(std::vector<Object> found, std::vector<Object>& exist)
+{
+	bool addrm;
+	unsigned int i, j;
+	
+	// if object has not been detected for too long, start decreasing rm_counter
+	// when it reaches zero or below, the object will be deleted
+	if (!exist.empty()){
+		
+		for (i = 0; i < exist.size(); i++){
+			addrm = false;
+			for (j = 0; j < found.size(); j++){
+				if (FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y))
+					break;
+			}
+
+			if (j == found.size() && !FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y))
+				addrm = true;
+				
+			if (addrm) exist[i].rm_counter--;
 		}
 		
 	}
+}
+
+bool ColourTracking::FitMargin(int ax, int ay, int bx, int by/*, int area*/)
+{
+//	float r = sqrt(rad); // instead of coordm, use sqrt of second objects area (so objects won't overlap, for example?)
 	
-	if (iDebugLevel == 2) std::cout << ts() << "Existing objects: " << existingobjects.size() << std::endl;
+	if (ax >= bx-coordm && ax <= bx+coordm && ay >= by-coordm && ay <= by+coordm){
+			return true;
+	}
+	else return false;
+}
+
+unsigned int ColourTracking::CleanupObjects(std::vector<Object>& exist)
+{	
+	// remove objects that no longer exist
+	exist.erase(std::remove_if(exist.begin(), exist.end(),
+				 [](const Object & o) { return o.rm_counter <= 0; } ),
+											 exist.end());
 	
+	if (iDebugLevel == 4){
+		std::cout << ts() << " Amount: " << exist.size() << std::endl;
+		for (unsigned int i = 0; i < exist.size(); i++){
+			std::cout << ts() << " Ind:" << exist[i].index << " x:" << exist[i].x << " y:" << exist[i].y << " rm:" << exist[i].rm_counter << std::endl;
+		}
+	}
+	
+	// return size of vecExistingObjects
+	return exist.size();
 }
 
 int ColourTracking::CorrectAmount(int amount, int interval, float dif)
@@ -228,26 +220,21 @@ void ColourTracking::setupsocket()
 	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
 }
 
-void ColourTracking::writebuffer(std::vector<Object> obj)
+void ColourTracking::writebuffer(std::vector<Object> obj, char* send)
 {
-	bzero(CommSendBuffer, 2048); /* flush send buffer */
+	bzero(send, 2048); /* flush send buffer */
 	
 	if (iCount != 0){
 		std::string amt = std::to_string(obj.size());
 		std::string time = ts();
-			
-		//strncpy(CommSendBuffer, itoa(ClrID), ); /* append ID of currently tracked colour (needs client-side interpretation) */
-//		strcpy(CommSendBuffer, "<start>");
 		
-		strcat(CommSendBuffer, "<time>"); /* append timestamp to sent message */
-		strncat(CommSendBuffer, time.c_str(), time.size());  
-		strcat(CommSendBuffer, "</time>");
+		strcat(send, "<time>"); /* append timestamp to sent message */
+		strncat(send, time.c_str(), time.size());  
 		
-		strcat(CommSendBuffer, "<a>"); 
-		strncat(CommSendBuffer, amt.c_str(), amt.size()); /* append object amount */
-		strcat(CommSendBuffer, "</a>\n");
+		strcat(send, "<nr>"); 
+		strncat(send, amt.c_str(), amt.size()); /* append object amount */
 		
-		
+		strcat(send, "\n");
 		
 		for (unsigned int i = 0; i < obj.size(); i++){
 			
@@ -256,51 +243,44 @@ void ColourTracking::writebuffer(std::vector<Object> obj)
 			std::string y = std::to_string(obj[i].y); /* convert y coordinate to string */
 			std::string s = std::to_string((int) obj[i].area); /* convert area to string */
 			
-			strcat(CommSendBuffer, "<i>");
-			strncat(CommSendBuffer, ind.c_str(), ind.size());  /* append object index */
-			strcat(CommSendBuffer, "</i>");
+			strcat(send, "<i>");
+			strncat(send, ind.c_str(), ind.size());  /* append object index */
 			
-			strcat(CommSendBuffer, "<x>");
-			strncat(CommSendBuffer, x.c_str(), x.size());   /* append x coordinate of object */
-			strcat(CommSendBuffer, "</x>");
+			strcat(send, "<x>");
+			strncat(send, x.c_str(), x.size());   /* append x coordinate of object */
 			
-			strcat(CommSendBuffer, "<y>");
-			strncat(CommSendBuffer, y.c_str(), y.size());  /* append y coordinate of object */
-			strcat(CommSendBuffer, "</y>");
+			strcat(send, "<y>");
+			strncat(send, y.c_str(), y.size());  /* append y coordinate of object */
 			
-			strcat(CommSendBuffer, "<S>");
-			strncat(CommSendBuffer, s.c_str(), s.size());  /* append area value of object */
-			strcat(CommSendBuffer, "</S>\n");
+			strcat(send, "<S>");
+			strncat(send, s.c_str(), s.size());  /* append area value of object */
+			
+			strcat(send, "\n"); /* append endline for each object */
 		
 		}
-		strcat(CommSendBuffer, "\0");
+		strcat(send, "\0");
 	}
-	else strcpy(CommSendBuffer, "<start>NOT_COUNTING<end>\n");
+	else strcpy(send, "<start>NOT_COUNTING<end>\n");
 	
 	if (iDebugLevel == 3){
-		std::cout << ts() << " Sending: " << CommSendBuffer;
-		std::cout << "\n" << ts() << "CommSendBuffer length: " << strlen(CommSendBuffer) << std::endl;
+		std::cout << ts() << " Sending: " << send;
+		std::cout << "\n" << ts() << "send length: " << strlen(send) << std::endl;
 	}
 }
     
-void ColourTracking::recvsend()
+void ColourTracking::recvsend(char* pass, char* send)
 {		
-	bzero(CommPassBuffer,64); /* flush pass buffer */
+	bzero(pass,64); /* flush pass buffer */
 	clientlen = sizeof(client_addr);
 	
-	recvfrom(sockfd, CommPassBuffer, 64, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
+	recvfrom(sockfd, pass, 64, MSG_DONTWAIT, (struct sockaddr *)&client_addr, &clientlen);
 
-	if (!strcmp(CommPassBuffer,comm_pass)){
+	if (!strcmp(pass,comm_pass)){
 
-		sendto(sockfd, CommSendBuffer, strlen(CommSendBuffer), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
+		sendto(sockfd, send, strlen(send), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
 	}
 } 
 
-void ColourTracking::getClrID()
-{
-	
-}
-    
 void ColourTracking::t_start()
 {
 	start_time = high_resolution_clock::now();
@@ -344,29 +324,39 @@ unsigned int ColourTracking::delay()
 
 void ColourTracking::Process(int msize)
 {
-//    std::vector<cv::Point> locs;
-//    std::vector<float> areas;
-    static unsigned int amountbuffer = 0;
+    static unsigned int fixed = 0;
+    static unsigned int found = 0;
     
     ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
-//    getClrID(); /* assign ID to guess which colour is tracked (currently not implemented 12.05.2015) */
     
     MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
     
     if (iCount > 0){
 		
-		amountbuffer = CorrectAmount(FindObjects(imgThresh, ObjectMinsize, ObjectMaxsize), 20, 0.25);
-		if (!existingobjects.empty()) HandleNewObjects(newobjects, existingobjects);
-			 else existingobjects = newobjects;
+		found = FindObjects(imgThresh, ObjectMinsize, ObjectMaxsize, vecFoundObjects);
+		fixed = CorrectAmount(found, 10, 0.25);
 		
-		writebuffer(existingobjects); /* write useful info to buffer */
-		recvsend();    /* transmit buffer via UDP */
+		if (found == fixed){
+			
+			AddNewObjects(vecFoundObjects, vecExistingObjects);
+			NonexistingObjects(vecFoundObjects, vecExistingObjects);
+		}
 		
-	} else IDcounter = 0;
+		CleanupObjects(vecExistingObjects);
 	
-	if (IDcounter > 65000) IDcounter = 0;
+		writebuffer(vecExistingObjects, CommSendBuffer); /* write useful info to buffer */
+
+	} 
+	else
+	{
+		IDcounter = 0;  /* reset ID counter */
+//		if (!vecFoundObjects.empty()) vecFoundObjects.clear();
+		if (!vecExistingObjects.empty()) vecExistingObjects.clear();
+	}
+	
+    recvsend(CommPassBuffer, CommSendBuffer); /* transmit buffer via UDP */
     
-    if (amountbuffer == existingobjects.size()) DrawCircles(imgOriginal, imgCircles, existingobjects);
+    DrawCircles(imgOriginal, imgCircles, vecExistingObjects);
 }
 
 void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
@@ -409,6 +399,7 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> 
 		// circle area = pi * radius^2
 		rad = sqrt(obj[i].area/PI_VALUE);
 		cv::circle(dst,cv::Point(obj[i].x,obj[i].y), rad, cv::Scalar(0,0,255), 2, 8, 0);
+		if (iDebugLevel > 0) cv::circle(dst,cv::Point(obj[i].x,obj[i].y), 3, cv::Scalar(0,255,0), 2, 8, 0); // draw mass center
 	}
 	
 }
@@ -429,12 +420,10 @@ ColourTracking::ColourTracking()
 	uiCaptureHeight = CAP_HEIGHT;
 	uiCaptureWidth = CAP_WIDTH;
 	
-	ObjectMinsize = (uiCaptureHeight/15) * (uiCaptureWidth/15); //OBJ_MINSIZE;
-	ObjectMaxsize = (uiCaptureHeight/5) * (uiCaptureWidth/5); //OBJ_MAXSIZE;
+	ObjectMinsize = (uiCaptureHeight * uiCaptureWidth)/100; //OBJ_MINSIZE;
+	ObjectMaxsize = (uiCaptureHeight * uiCaptureWidth)/5; //OBJ_MAXSIZE;
 	
-	xError = 10;
-	yError = 10;
-	areaError = 2000;
+	coordm = 30;
 	
 	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;
@@ -628,6 +617,8 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 					std::cout << "Object area must be above 0 and below 300000 (512x512 == 262144)\n";
 					return -1;
 				}
+				std::cout << ts() << " Object minimum size: " << ObjectMinsize << "px2\n";
+				std::cout << ts() << " Object maximum size: " << ObjectMaxsize << "px2\n"; 
 				j += 2;
 			}
 
