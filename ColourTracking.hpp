@@ -110,10 +110,8 @@ class ColourTracking
 	char CommPassBuffer[64]; /* message received from client */
 	char CommSendBuffer[2048]; /* message sent to client */
 
-	// currently tracked colour ID
-	//int ClrID;
     
-	// struct for storing objects and their parameters in memory
+	// struct for object member variables
 	struct Object
 	{
 		unsigned int index; /* object index */
@@ -121,21 +119,21 @@ class ColourTracking
 		int y; /* y coord */
 		int area; /* area value */
 		int rm_counter; /* if this reaches 0, the object is removed */
-		int cm; // coordinate margin
-//		bool tbr; // to re removed
+		int exist_counter; // amount of cycles the object has existed
+		float cm; // coordinate margin
 
-		Object(unsigned int newindex, int newx, int newy, int newarea, int mar) 
+		Object(unsigned int newindex, int newx, int newy, int newarea, int rmdef) 
 		{ 
 			index = newindex;
 			x = newx;
 			y = newy;
 			area = newarea;
-			rm_counter = 10;
-			cm = mar;
-//			tbr = false;
+			rm_counter = rmdef;
+			exist_counter = 0;
+			cm = (sqrt(area))/2;
+			
 		} 
 		
-		// return true if duplicate (this value used for vector cleanup)
 		bool operator==(const Object& p) const
 		{
 			if (x <= (p.x+cm) && x >= (p.x-cm)){
@@ -152,13 +150,13 @@ class ColourTracking
 
 	};
 	
-	unsigned int IDcounter; // give each new object a new ID
-	unsigned int rm_counter_max;
+	unsigned int IDcounter; // will have a new ID for each object
+	unsigned int rm_default;
+	unsigned int MinExistForDraw;
 	
 	std::vector<Object> vecExistingObjects;
 	std::vector<Object> vecFoundObjects;
 
-	int coordm; // coordinate duplicate margin
 
 	/******************************************************************/
 	
@@ -177,27 +175,23 @@ class ColourTracking
     int FindObjects(cv::Mat, float, float, std::vector<Object>&); 
     
     // correction of the results of FindObjects
-    // arguments : (amount, cycle interval, difference between start&end)
-    int CorrectAmount(int, int, float);
+    //int CorrectAmount(int, int, float); // obsolete, Object vectors do not require this
     
     // draw circles around found objects
     void DrawCircles(cv::Mat, cv::Mat&, std::vector<Object>);
     
     // Information transmission via UDP
-    void setupsocket();/* bind socket */
-	void recvsend(char*, char*); /* receive and send information back (if correct pass) */
-    void writebuffer(std::vector<Object>, char*); /* write useful information to buffer */   
-    
-    // Identify as to approximately what colour is currently being tracked
-	//void getClrID();
+    void SetupSocket();/* bind socket */
+	void RecvSend(char*, char*); /* receive and send information back (if correct pass) */
+    void WriteSendBuffer(std::vector<Object>, char*); /* write useful information to buffer */       
 
 	void disablegui(); /* set GUI parameter to false */
 
 	// work with object vectors
 	unsigned int AddNewObjects(std::vector<Object> found, std::vector<Object>& exist);
-	void NonexistingObjects(std::vector<Object> found, std::vector<Object>& exist);
+	void ExistentialObjects(std::vector<Object> found, std::vector<Object>& exist);
 	unsigned int CleanupObjects(std::vector<Object>& exist);
-	bool FitMargin(int ax, int ay, int bx, int by);
+	bool FitMargin(int ax, int ay, int bx, int by, float cm);
     /******************************************************************/
     
     
@@ -214,9 +208,6 @@ class ColourTracking
     
     unsigned int height(); /* return captured frame height */
 	unsigned int width();
-	
-    
-   
 
     /******************************************************************/
     

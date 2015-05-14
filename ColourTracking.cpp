@@ -28,9 +28,8 @@
 #include "ColourTracking.hpp"
 
 #include <vector>
-#include <cmath>
 #include <iostream>
-#include <ctime>
+//#include <ctime>
 
 /** Includes for socket communication **/
 #include <sys/types.h>
@@ -42,7 +41,36 @@
 using namespace cv;
 using namespace std::chrono;
 
+void ColourTracking::Process(int msize) // main process
+{   
+    ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
+    
+    MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
+    
+    if (iCount > 0){
+		
+		FindObjects(imgThresh, ObjectMinsize, ObjectMaxsize, vecFoundObjects);
+		
+		AddNewObjects(vecFoundObjects, vecExistingObjects);
+		ExistentialObjects(vecFoundObjects, vecExistingObjects);
+		
+		CleanupObjects(vecExistingObjects);
+	
+		WriteSendBuffer(vecExistingObjects, CommSendBuffer); /* write useful info to buffer */
 
+	} 
+	else
+	{
+		IDcounter = 0;  /* reset ID counter */
+		if (!vecExistingObjects.empty()) vecExistingObjects.clear();
+	}
+	
+    RecvSend(CommPassBuffer, CommSendBuffer); /* transmit buffer via UDP */
+    
+    DrawCircles(imgOriginal, imgCircles, vecExistingObjects);
+}
+
+/******** Functions regarding detection and storage of objects ********/
 int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize, std::vector<Object>& found)
 {
 	cv::Mat imgBuffer8u;
@@ -53,7 +81,7 @@ int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize, std::
 	
 	cv::findContours(imgBuffer8u, contours, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 	
-	found.clear(); // clear vector to make room for new ones
+	found.clear(); // clear vector to make room for new objects
 	
 	std::vector<cv::Moments> mv; // temporary moment vector 
 	std::vector<float> sv; // temporary area vector 
@@ -67,21 +95,19 @@ int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize, std::
 
 		if (sv.back() >= minsize && sv.back() <= maxsize){
 			mv.push_back (cv::moments(contours[i], false));
-//			IDcounter++;
 		}
 		else sv.pop_back();
 		
 	}
-//	areas = sv;
-	
 	
 	// get mass centers and create new objects in one loop
 	for (unsigned int i = 0; i < sv.size(); i++){
 		
 		mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
-		found.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i], coordm));
+		
+		// Object arguments: new index, x, y, area, coordinate margin, remove counter
+		found.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i], rm_default));
 	}
-//	centers = mc;
 	
 	// returns number of mass centers (aka objects)
 	return found.size();
@@ -93,68 +119,89 @@ unsigned int ColourTracking::AddNewObjects(std::vector<Object> found, std::vecto
 	
 	if (!exist.empty()){	
 		
-		// add currently found objects to vecExistingObjects
-		for (unsigned int i = 0; i < found.size(); i++){
+		if (iDebugLevel == 5) std::cout << ts() << " AddNewObjects start.\n";
+		
+		if (!found.empty()){
 			
-			isnew = true;
-			
-			for (unsigned int j = 0; j < exist.size(); j++){
-
-				if (found[i].x >= exist[j].x-coordm && found[i].x <= exist[j].x+coordm){
-					if (found[i].y >= exist[j].y-coordm && found[i].y <= exist[j].y+coordm){
-				//if (FitMargin(found[i].x, found[i].y, exist[j].x, exist[j].y)){ //for some reason this will not work here
+			// add currently found objects to vecExistingObjects
+			for (unsigned int i = 0; i < found.size(); i++){
 				
-						isnew = false; 
-						break;
+				isnew = true;
+				
+				for (unsigned int j = 0; j < exist.size(); j++){
+
+					if (found[i].x >= (exist[j].x - exist[j].cm) && found[i].x <= (exist[j].x + exist[j].cm)){
+						if (found[i].y >= (exist[j].y - exist[j].cm) && found[i].y <= (exist[j].y + exist[j].cm)){
+					//if (FitMargin(found[i].x, found[i].y, exist[j].x, exist[j].y)){ //for some reason this will not work here
+					
+							isnew = false; 
+							break;
+						}
 					}
 				}
-			}
 
-			// is a new object, add to existing objects
-			if (isnew){ 
-				
-				IDcounter++;
-				found[i].index = IDcounter;
-				
-				exist.push_back (found[i]);
+				// is a new object, add to existing objects
+				if (isnew){ 
+					
+					IDcounter++;
+					found[i].index = IDcounter;
+					
+					exist.push_back (found[i]);
+				}
 			}
 		}
-	} else exist = found;
-	
+	}
+	else {
+		if (!found.empty()) exist = found; 
+		if (iDebugLevel == 6) std::cout << ts() << " No existing objects. (AddNewObjects)\n";
+	}
 	// return size of vecExistingObjects
 	return exist.size();
 }
 
-void ColourTracking::NonexistingObjects(std::vector<Object> found, std::vector<Object>& exist)
+void ColourTracking::ExistentialObjects(std::vector<Object> found, std::vector<Object>& exist)
 {
 	bool addrm;
 	unsigned int i, j;
 	
 	// if object has not been detected for too long, start decreasing rm_counter
-	// when it reaches zero or below, the object will be deleted
+	// when it reaches zero or below, the object will be deleted during cleanup
 	if (!exist.empty()){
+		if (iDebugLevel == 5) std::cout << ts() << " NonexistingObjects start.\n";
 		
-		for (i = 0; i < exist.size(); i++){
-			addrm = false;
-			for (j = 0; j < found.size(); j++){
-				if (FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y))
-					break;
-			}
-
-			if (j == found.size() && !FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y))
-				addrm = true;
+		if (!found.empty()){
+			for (i = 0; i < exist.size(); i++){
 				
-			if (addrm) exist[i].rm_counter--;
+				addrm = false;
+				
+				for (j = 0; j < found.size(); j++){
+					if (FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y, found[j].cm)){
+						exist[i].exist_counter++; // increase exist_counter (checked when drawing circles) 
+						break;
+					}
+					
+				}
+
+				if (j == found.size() && !FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y, found[j].cm))
+					addrm = true;
+					
+				if (addrm) exist[i].rm_counter--;
+			}
 		}
-		
+		else {
+			for (i = 0; i < exist.size(); i++){  // if no objects are found at all
+				exist[i].rm_counter--;
+			}
+		}
 	}
+	else if (iDebugLevel == 6) std::cout << ts() << " No existing objects. (NonexistingObjects)\n";
 }
 
-bool ColourTracking::FitMargin(int ax, int ay, int bx, int by/*, int area*/)
+bool ColourTracking::FitMargin(int ax, int ay, int bx, int by, float cm)
 {
 //	float r = sqrt(rad); // instead of coordm, use sqrt of second objects area (so objects won't overlap, for example?)
 	
-	if (ax >= bx-coordm && ax <= bx+coordm && ay >= by-coordm && ay <= by+coordm){
+	if (ax >= bx - cm && ax <= bx + cm && ay >= by - cm && ay <= by + cm){
 			return true;
 	}
 	else return false;
@@ -162,54 +209,29 @@ bool ColourTracking::FitMargin(int ax, int ay, int bx, int by/*, int area*/)
 
 unsigned int ColourTracking::CleanupObjects(std::vector<Object>& exist)
 {	
-	// remove objects that no longer exist
-	exist.erase(std::remove_if(exist.begin(), exist.end(),
-				 [](const Object & o) { return o.rm_counter <= 0; } ),
-											 exist.end());
-	
-	if (iDebugLevel == 4){
-		std::cout << ts() << " Amount: " << exist.size() << std::endl;
-		for (unsigned int i = 0; i < exist.size(); i++){
-			std::cout << ts() << " Ind:" << exist[i].index << " x:" << exist[i].x << " y:" << exist[i].y << " rm:" << exist[i].rm_counter << std::endl;
+	if (!exist.empty()){
+		if (iDebugLevel == 5) std::cout << ts() << " CleanupObjects start.\n";
+		// remove objects that no longer exist
+		exist.erase(std::remove_if(exist.begin(), exist.end(),
+					 [](const Object & o) { return o.rm_counter <= 0; } ), exist.end());
+		
+		if (iDebugLevel == 4){
+			std::cout << ts() << " Amount: " << exist.size() << std::endl;
+			for (unsigned int i = 0; i < exist.size(); i++){
+				std::cout << ts() << " Ind:" << exist[i].index << " x:" << exist[i].x << " y:" << exist[i].y << " rm:" << exist[i].rm_counter << std::endl;
+			}
 		}
 	}
+	else if (iDebugLevel == 6) std::cout << ts() << " No existing objects. (CleanupObjects)\n";
 	
 	// return size of vecExistingObjects
 	return exist.size();
 }
+/**********************************************************************/
 
-int ColourTracking::CorrectAmount(int amount, int interval, float dif)
-{
-	static int k = 0;
-	static int prev = 0;
-	static double total = 0;
-	
-	k++;
-	total += amount;
-		
-	if (k >= interval)
-	{	
 
-		if (amount != prev && amount < (total/(k+1))+dif && amount >= (total/(k+1))-dif){
-			if (iDebugLevel >= 1){
-				std::cout << ts() << " " << amount << " OBJECTS FOUND.\n";
-			}
-			prev = amount;
-			k = 0;
-			total = amount;
-			return amount;
-		} 
-		else {
-			k = 0;
-			total = amount;
-			return prev;
-		}
-	}
-	
-	return prev;
-}
- 
-void ColourTracking::setupsocket()
+/*** Functions regarding information transmission via socket | UDP ****/
+void ColourTracking::SetupSocket()
 {
 	sockfd = socket(AF_INET, SOCK_DGRAM, COMM_PROTOCOL);
 	
@@ -220,7 +242,7 @@ void ColourTracking::setupsocket()
 	bind(sockfd, (struct sockaddr *) &server_addr, sizeof(server_addr));
 }
 
-void ColourTracking::writebuffer(std::vector<Object> obj, char* send)
+void ColourTracking::WriteSendBuffer(std::vector<Object> obj, char* send)
 {
 	bzero(send, 2048); /* flush send buffer */
 	
@@ -262,13 +284,13 @@ void ColourTracking::writebuffer(std::vector<Object> obj, char* send)
 	}
 	else strcpy(send, "<start>NOT_COUNTING<end>\n");
 	
-	if (iDebugLevel == 3){
-		std::cout << ts() << " Sending: " << send;
+	if (iDebugLevel == 7){
+		std::cout << ts() << " Sending:\n" << send;
 		std::cout << "\n" << ts() << "send length: " << strlen(send) << std::endl;
 	}
 }
     
-void ColourTracking::recvsend(char* pass, char* send)
+void ColourTracking::RecvSend(char* pass, char* send)
 {		
 	bzero(pass,64); /* flush pass buffer */
 	clientlen = sizeof(client_addr);
@@ -280,7 +302,9 @@ void ColourTracking::recvsend(char* pass, char* send)
 		sendto(sockfd, send, strlen(send), 0, (struct sockaddr *) &client_addr, sizeof(client_addr));
 	}
 } 
+/**********************************************************************/
 
+/*** Functions regarding the time measurement of various operations ***/
 void ColourTracking::t_start()
 {
 	start_time = high_resolution_clock::now();
@@ -321,44 +345,10 @@ unsigned int ColourTracking::delay()
 	
 	return result;
 }
+/**********************************************************************/
 
-void ColourTracking::Process(int msize)
-{
-    static unsigned int fixed = 0;
-    static unsigned int found = 0;
-    
-    ThresholdImage(imgOriginal, imgHSV, imgThresh, iHSV, true);
-    
-    MorphImage(iMorphLevel, msize, imgThresh, imgThresh);
-    
-    if (iCount > 0){
-		
-		found = FindObjects(imgThresh, ObjectMinsize, ObjectMaxsize, vecFoundObjects);
-		fixed = CorrectAmount(found, 10, 0.25);
-		
-		if (found == fixed){
-			
-			AddNewObjects(vecFoundObjects, vecExistingObjects);
-			NonexistingObjects(vecFoundObjects, vecExistingObjects);
-		}
-		
-		CleanupObjects(vecExistingObjects);
-	
-		writebuffer(vecExistingObjects, CommSendBuffer); /* write useful info to buffer */
 
-	} 
-	else
-	{
-		IDcounter = 0;  /* reset ID counter */
-//		if (!vecFoundObjects.empty()) vecFoundObjects.clear();
-		if (!vecExistingObjects.empty()) vecExistingObjects.clear();
-	}
-	
-    recvsend(CommPassBuffer, CommSendBuffer); /* transmit buffer via UDP */
-    
-    DrawCircles(imgOriginal, imgCircles, vecExistingObjects);
-}
-
+/****** OpenCV-based functions (using functionality of imgproc) *******/
 void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& buf, cv::Mat& dst, int hsv[], bool blur)
 {
 	// RGB -> HSV		
@@ -387,22 +377,22 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> 
 	dst = cv::Mat::zeros(src.size(), src.type());
 	float rad;
 	
-	for (unsigned int i=0; i<obj.size(); i++){
-
-		if (iDebugLevel >= 3) {
-			std::cout << ts() << " " << (i+1);
-		    std::cout << ".OBJECT X:" << obj[i].x;
-		    std::cout << " Y:" << obj[i].y;
-		    std::cout << " AREA: " << obj[i].area << std::endl;
-	    }
-		 
-		// circle area = pi * radius^2
-		rad = sqrt(obj[i].area/PI_VALUE);
-		cv::circle(dst,cv::Point(obj[i].x,obj[i].y), rad, cv::Scalar(0,0,255), 2, 8, 0);
-		if (iDebugLevel > 0) cv::circle(dst,cv::Point(obj[i].x,obj[i].y), 3, cv::Scalar(0,255,0), 2, 8, 0); // draw mass center
+	if (!obj.empty()){
+		for (unsigned int i=0; i<obj.size(); i++){
+			 
+			 if (obj[i].exist_counter >= MinExistForDraw){
+				 
+				// circle area = pi * radius^2
+				rad = sqrt(obj[i].area/PI_VALUE);
+				cv::circle(dst,cv::Point(obj[i].x,obj[i].y), rad, cv::Scalar(0,0,255), 2, 8, 0);
+				if (iDebugLevel > 0) cv::circle(dst,cv::Point(obj[i].x,obj[i].y), 3, cv::Scalar(0,255,0), 2, 8, 0); // draw mass center
+			}
+		}
 	}
-	
+	else if (iDebugLevel == 6) std::cout << ts() << " No existing objects. (DrawCircles)\n";
 }
+/**********************************************************************/
+
 
 ColourTracking::ColourTracking()
 {
@@ -423,12 +413,13 @@ ColourTracking::ColourTracking()
 	ObjectMinsize = (uiCaptureHeight * uiCaptureWidth)/100; //OBJ_MINSIZE;
 	ObjectMaxsize = (uiCaptureHeight * uiCaptureWidth)/5; //OBJ_MAXSIZE;
 	
-	coordm = 30;
-	
 	strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
 	comm_port = COMM_PORT;
 	
-	setupsocket();
+	rm_default = 5;
+	MinExistForDraw = 30; // random pick
+	
+	SetupSocket();
 
 }
 
@@ -453,27 +444,6 @@ void ColourTracking::Display()
 		imshow("Original", imgOriginal); /* show the original image */
 		
 	}else destroyWindow("Original");
-}
-
-bool ColourTracking::CreateControlWindow()
-{
-	if (bGUI){
-	    namedWindow("Control", CV_WINDOW_NORMAL);
-		
-	    cvCreateTrackbar("HUE min", "Control", &iHSV[0], 179);
-	    cvCreateTrackbar("HUE max", "Control", &iHSV[1], 179);
-	    cvCreateTrackbar("SAT min", "Control", &iHSV[2], 255);
-	    cvCreateTrackbar("SAT max", "Control", &iHSV[3], 255);
-	    cvCreateTrackbar("VAL min", "Control", &iHSV[4], 255);
-	    cvCreateTrackbar("VAL max", "Control", &iHSV[5], 255);
-	    cvCreateTrackbar("Original", "Control", &iShowOriginal, 1);
-	    cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
-	    cvCreateTrackbar("Count", "Control", &iCount, 1);
-	    cvCreateTrackbar("Morph", "Control", &iMorphLevel, 2);
-	    cvCreateTrackbar("Debug", "Control", &iDebugLevel, 4);
-	}
-
-	return true;
 }
 
 std::string ColourTracking::ts()
@@ -527,6 +497,27 @@ unsigned int ColourTracking::width()
 	return uiCaptureWidth;
 }
 
+bool ColourTracking::CreateControlWindow()
+{
+	if (bGUI){
+	    namedWindow("Control", CV_WINDOW_NORMAL);
+		
+	    cvCreateTrackbar("HUE min", "Control", &iHSV[0], 179);
+	    cvCreateTrackbar("HUE max", "Control", &iHSV[1], 179);
+	    cvCreateTrackbar("SAT min", "Control", &iHSV[2], 255);
+	    cvCreateTrackbar("SAT max", "Control", &iHSV[3], 255);
+	    cvCreateTrackbar("VAL min", "Control", &iHSV[4], 255);
+	    cvCreateTrackbar("VAL max", "Control", &iHSV[5], 255);
+	    cvCreateTrackbar("Original", "Control", &iShowOriginal, 1);
+	    cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
+	    cvCreateTrackbar("Count", "Control", &iCount, 1);
+	    cvCreateTrackbar("Morph", "Control", &iMorphLevel, 2);
+	    cvCreateTrackbar("Debug", "Control", &iDebugLevel, 10);
+	}
+
+	return true;
+}
+
 int ColourTracking::CmdParameters(int argc, char** argv)
 {
 	if (argc > 1){
@@ -538,6 +529,8 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 				std::cout << "-morph # (0..2)\n-nocount (Not recommended for commandline)\n";
 				std::cout << "-udppass [string]  (passphrase that udp client needs to provide)\n";
 				std::cout << "-udpport [port nr]  (port nr for udp communication, 2000..65535)\n";
+				std::cout << "-rmstart [5..50]  defines how many cycles before object is dropped\n";
+				std::cout << "-drawmin [0..500] (Default is 30) Defines how many cycles an object must exist, before it is marked on the original frame.\n";
 				return -1;
 			}
 			else if (!std::strcmp(argv[j],"-framesize")){
@@ -621,7 +614,22 @@ int ColourTracking::CmdParameters(int argc, char** argv)
 				std::cout << ts() << " Object maximum size: " << ObjectMaxsize << "px2\n"; 
 				j += 2;
 			}
-
+			else if (!std::strcmp(argv[j],"-rmstart")){
+				rm_default = std::atoi(argv[j+1]);
+				if (rm_default > 50 || rm_default < 5){
+					std::cout << "If removal counter is below 5, objects get removed too fast. If it's too high, objects get removed too slowly. Try 5..50\n";
+					return -1;
+				}
+				j++;
+			}
+			else if (!std::strcmp(argv[j],"-drawmin")){
+				MinExistForDraw = std::atoi(argv[j+1]);
+				if (MinExistForDraw > 500){
+					std::cout << "Aiming a bit too high there, aren't we.. Try something more reasonable, between 10..100.\n";
+					return -1;
+				}
+				j++;
+			}
 		}
 	}
 	
