@@ -59,8 +59,7 @@ void ColourTracking::Process(int msize) // main process
 		WriteSendBuffer(vecExistingObjects, CommSendBuffer); /* write useful info to buffer */
 
 	} 
-	else
-	{
+	else {
 		IDcounter = 0;  /* reset ID counter */
 		if (!vecExistingObjects.empty()) vecExistingObjects.clear();
 	}
