@@ -1,32 +1,15 @@
 /*
- * ColourTracking.hpp
- * 
- * Copyright 2015 Carl Ivask
- * 
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- * 
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- * MA 02110-1301, USA.
- * 
+ * File name: ColourTracking.hpp
+ * File description: Class header.
+ * Author: Carl-Martin Ivask
  * 
  */
-
 
 #ifndef _ColourTracking_HPP_
 #define _ColourTracking_HPP_
 
 #define COMM_PORT 12015
-#define COMM_PROTOCOL 0
+#define COMM_PROTOCOL 0 // UDP
 #define COMM_PASS "objectcount"
 
 #define CAP_HEIGHT 512
@@ -48,6 +31,7 @@
 #define PI_VALUE 3.1415926535
 #define DEFAULT 3
 #define DEF_DEBUG 1
+#define MORPH_KERNEL_SIZE 3
 
 // approximate high hues of colours
 #define ORANGE 22
@@ -64,109 +48,97 @@
 
 class ColourTracking
 {
-	private:
-	/******************** Private access variables ********************/
-	/***************** (e.g. configuration parameters) ****************/
-	
-	// Mats for different image stages
-    cv::Mat imgHSV;
+    private:
+    /******************** Private access variables ********************/
+    /***************** (e.g. configuration parameters) ****************/
+    
+    // Image pixel arrays
     cv::Mat imgThresh;
     cv::Mat imgCircles;
 
-	// do counting; show unaltered image; show thresholded image; GUI
-	int iCount;
-	int iShowOriginal;
-	int iShowThresh;
-	bool bGUI;
-	
-	// hue/saturation/light intensity values; morph level; debug level
-	int iHSV[6];
-	int iMorphLevel;
-	int iDebugLevel;
-	
-	// main loop delay; captured frame height; captured frame width
-	unsigned int uiDelay;
-	unsigned int uiCaptureHeight;
-	unsigned int uiCaptureWidth;
-	
-	// limits for counting objects
-	float ObjectMinsize;
-	float ObjectMaxsize;
-	
-	// parameters for use in UDP communication
-	char comm_pass[256];
-	unsigned int comm_port;
-	//int objectamount;
-	
-	// chrono time measuring variables
-	std::chrono::high_resolution_clock::time_point start_time;
-	std::chrono::high_resolution_clock::time_point end_time;
-	unsigned int time_dif;	
-	
-	// udp communication variables
+    // do counting; show unaltered image; show thresholded image; GUI; blur when thresh
+    int iCount;
+    int iShowOriginal;
+    int iShowThresh;
+    bool bGUI;
+    bool bThreshBlur;
+
+    // hue/saturation/light intensity values; morph level; debug level
+    int iHSV[6];
+    int iMorphLevel;
+    int iDebugLevel;
+    
+    // main loop delay; captured frame height; captured frame width
+    unsigned int uiDelay;
+    unsigned int uiCaptureHeight;
+    unsigned int uiCaptureWidth;
+    
+    // limits for counting objects
+    float ObjectMinsize;
+    float ObjectMaxsize;
+    
+    // parameters for use in UDP communication
+    char comm_pass[256];
+    unsigned int comm_port;
+    //int objectamount;
+    
+    // chrono time measuring variables
+    std::chrono::high_resolution_clock::time_point start_time;
+    std::chrono::high_resolution_clock::time_point end_time;
+    unsigned int time_dif;  
+    
+    // udp communication variables
     int sockfd; /* socket file descriptor */
-	struct sockaddr_in server_addr, client_addr; /* server & client address */
-	socklen_t clientlen; /* length of client address */
-	char CommPassBuffer[64]; /* message received from client */
-	char CommSendBuffer[2048]; /* message sent to client */
+    struct sockaddr_in server_addr, client_addr; /* server & client address */
+    socklen_t clientlen; /* length of client address */
+    char CommPassBuffer[64]; /* message received from client */
+    char CommSendBuffer[2048]; /* message sent to client */
 
     
-	// struct for object member variables
-	struct Object
-	{
-		unsigned int index; /* object index */
-		int x; /* x coord */
-		int y; /* y coord */
-		int area; /* area value */
-		int rm_counter; /* if this reaches 0, the object is removed */
-		int exist_counter; // amount of cycles the object has existed
-		float cm; // coordinate margin
+    // struct for object member variables
+    struct Object
+    {
+        unsigned int index; // object index
+        int x; // x coord
+        int y; // y coord
+        int area; // area value
+        unsigned int rm_counter; // if this reaches 0, the object is removed
+        unsigned int exist_counter; // amount of cycles the object has existed
+        float cm; // coordinate margin
 
-		Object(unsigned int newindex, int newx, int newy, int newarea, int rmdef) 
-		{ 
-			index = newindex;
-			x = newx;
-			y = newy;
-			area = newarea;
-			rm_counter = rmdef;
-			exist_counter = 0;
-			cm = (sqrt(area))/2;
-			
-		} 
-		
-		bool operator==(const Object& p) const
-		{
-			if (x <= (p.x+cm) && x >= (p.x-cm)){
-				if (y <= (p.y+cm) && y >= (p.y-cm)){
-						
-					// object appears to be a duplicate
-					return true;
-					
-				}
-			}
-			// object appears to be unique
-			return false;
-		}
+        
+        Object(unsigned int newindex, int newx, int newy, int newarea, int rmdef) 
+        { 
+            index = newindex;
+            x = newx;
+            y = newy;
+            area = newarea;
+            rm_counter = rmdef;
+            exist_counter = 0;
+            cm = (sqrt(area))/2;
+            
+        } 
 
-	};
-	
-	unsigned int IDcounter; // will have a new ID for each object
-	unsigned int rm_default;
-	unsigned int MinExistForDraw;
-	
-	std::vector<Object> vecExistingObjects;
-	std::vector<Object> vecFoundObjects;
+    };
+    
+    unsigned int IDcounter; // will have a new ID for each object
+    unsigned int rm_default;
+    unsigned int MinLife;
+    int iObjMove;
+    
+    std::vector<Object> vecExistingObjects;
+    std::vector<Object> vecFoundObjects;
 
 
-	/******************************************************************/
-	
-	
+    /******************************************************************/
+    
+    
     
     /******************** OpenCV-related and other ********************/
     /******************** private access functions ********************/
     
     // threshold image with user defined parameters
-    void ThresholdImage(cv::Mat, cv::Mat&, cv::Mat&, int [], bool);
+    void ThresholdImage(cv::Mat, cv::Mat&, int [], bool);
     
     // erode & dilate binary image
     void MorphImage(unsigned int, int, cv::Mat, cv::Mat&);
@@ -174,24 +146,22 @@ class ColourTracking
     // create vectors for moments, areas and mass centers
     int FindObjects(cv::Mat, float, float, std::vector<Object>&); 
     
-    // correction of the results of FindObjects
-    //int CorrectAmount(int, int, float); // obsolete, Object vectors do not require this
+    // work with object vectors
+    unsigned int AddNewObjects(std::vector<Object> found, std::vector<Object>& exist);
+    void ExistentialObjects(std::vector<Object> found, std::vector<Object>& exist);
+    unsigned int CleanupObjects(std::vector<Object>& exist);
+    bool FitMargin(int ax, int ay, int bx, int by, float cm);
     
     // draw circles around found objects
     void DrawCircles(cv::Mat, cv::Mat&, std::vector<Object>);
     
     // Information transmission via UDP
     void SetupSocket();/* bind socket */
-	void RecvSend(char*, char*); /* receive and send information back (if correct pass) */
-    void WriteSendBuffer(std::vector<Object>, char*); /* write useful information to buffer */       
+    void RecvSend(char*, char*); /* receive and send information back (if correct pass) */
+    void WriteSendBuffer(std::vector<Object>, char*); /* write useful information to buffer */ 
+    
+    void disablegui(); /* set GUI parameter to false */
 
-	void disablegui(); /* set GUI parameter to false */
-
-	// work with object vectors
-	unsigned int AddNewObjects(std::vector<Object> found, std::vector<Object>& exist);
-	void ExistentialObjects(std::vector<Object> found, std::vector<Object>& exist);
-	unsigned int CleanupObjects(std::vector<Object>& exist);
-	bool FitMargin(int ax, int ay, int bx, int by, float cm);
     /******************************************************************/
     
     
@@ -199,63 +169,75 @@ class ColourTracking
     public:
     /******************** Public access variables *********************/
     /******************************************************************/
-    
-	cv::Mat imgOriginal; /* this Mat is public because it's used in main */
-	
-	void setHSV (int *); /* set hue, saturation and light intensity*/
-    int* hsv(); /* return array of hsv values */
-    int val(unsigned int); /* return single value from hsv array */
-    
-    unsigned int height(); /* return captured frame height */
-	unsigned int width();
+    cv::Mat imgOriginal; /* this Mat is public because it's used in main */
+
+    void setHSV (int *); /* set hue, saturation and light intensity*/
+ 
+    int* hsv() { return iHSV; } /* return HSV array */
+
+    int val(unsigned int k) { return iHSV[k]; } /* return single value from hsv array */ 
+
+    unsigned int height() { return uiCaptureHeight; } /* return captured frame height */ 
+
+    unsigned int width() { return uiCaptureWidth; } /* return array of hsv values */
 
     /******************************************************************/
     
     
     
-	/********************* Public functions ***************************/
-	/******************************************************************/
-		
-	/*     CONSTRUCTOR DEFAULT VALUES:
-	 * 
-	 * Object counting = ENABLED
-	 *     Morph level = DISABLED
-	 *    Display orig = DISABLED
-	 *  Display thresh = DISABLED
-	 *             GUI = ENABLED
-	 *      HSV values = 0, 179, 0, 255, 0, 255
-	 *     Cycle delay = 150ms
-	 *     Debug level = 1
-	 *  Capture height = 512 px
-	 *   Capture width = 512 px
-	 * Max object size = 40000 sqpx (200x200)  Considering 512x512 frame
-	 * Min object size = 2500 sqpx (50x50)     which is 262144 square pixels.
-	 *   UDP comm pass = "objectcount"
-	 *   UDP comm port = 12015
-	 */ 
-	ColourTracking(); /* constructor declaration */    
-	    
-    // applies all the main functions (described above) on captured frame
-    void Process(int);
+    /********************* Public functions ***************************/
+    /******************************************************************/
+        
+    ColourTracking() /* assign default values */
+    {
+        iCount = ENABLED;
+        iMorphLevel = DISABLED;
+        iShowOriginal = DISABLED;
+        iShowThresh = DISABLED;
+        bGUI = ENABLED;
+        bThreshBlur = ENABLED;
+        
+        int buffer[6] = {LHUE, HHUE, LSAT, HSAT, LVAL, HVAL};
+        setHSV(buffer);
+        
+        uiDelay = MAX_CYCLE_T - MIN_CYCLE_T;
+        iDebugLevel = DEF_DEBUG;
+        uiCaptureHeight = CAP_HEIGHT;
+        uiCaptureWidth = CAP_WIDTH;
+        
+        ObjectMinsize = (uiCaptureHeight * uiCaptureWidth) / 100;
+        ObjectMaxsize = (uiCaptureHeight * uiCaptureWidth) / 4;
+        
+        strncpy(comm_pass, COMM_PASS, sizeof(COMM_PASS));
+        comm_port = COMM_PORT;
+        
+        rm_default = 5;
+        MinLife = rm_default * 2; // default is always higher than removal counter
+        iObjMove = ENABLED;
+        
+        SetupSocket();
+    }
+        
+    void Process();
     
     // display original and thresholded images
     void Display();
-	
-	// run-time control panel with highgui trackbars
-	bool CreateControlWindow();
-	
-	// calculate delay for the waitKey function in main.cpp
+    
+    // run-time control panel with highgui trackbars
+    bool CreateControlWindow();
+    
+    // calculate delay for the waitKey function in main.cpp
     unsigned int delay();
     void t_start(); /* set starting timepoint */
-	void t_end();   /* set end timepoint and calculate time_dif*/
-	
-	// parse command line arguments
-	int CmdParameters(int, char**);	
-	
-	// returns timestamp "[HH:MM:SS]"
+    void t_end();   /* set end timepoint and calculate time_dif*/
+    
+    // parse command line arguments
+    int CmdParameters(int, char**); 
+    
+    // returns timestamp "[HH:MM:SS]"
     std::string ts();
-	
-	/******************************************************************/
+    
+    /******************************************************************/
 };
 
 
