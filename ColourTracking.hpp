@@ -12,8 +12,8 @@
 #define COMM_PROTOCOL 0 // UDP
 #define COMM_PASS "objectcount"
 
-#define CAP_HEIGHT 512
-#define CAP_WIDTH 512
+#define CAP_HEIGHT 320
+#define CAP_WIDTH 360
 #define ENABLED 1
 #define DISABLED 0
 #define MAX_CYCLE_T 200
@@ -24,8 +24,6 @@
 #define HHUE 179
 #define HSAT 255
 #define HVAL 255
-#define OBJ_MINSIZE 2500.00 // 50x50 large enough (example: cups from 2m away)
-#define OBJ_MAXSIZE 40000.00 //200x200
 #define ESCAPE 27
 #define DEF_INTERVAL 100
 #define PI_VALUE 3.1415926535

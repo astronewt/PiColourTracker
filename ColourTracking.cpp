@@ -351,7 +351,7 @@ void ColourTracking::ThresholdImage(cv::Mat src, cv::Mat& dst, int hsv[], bool b
     if (hsv[0] <= hsv[1]) {
         cv::inRange(buf, cv::Scalar(hsv[0], hsv[2], hsv[4]), cv::Scalar(hsv[1], hsv[3], hsv[5]), dst);
     } 
-    // apply circular thresholding (e.g. Hue ranges from 130 (low red) to 22(high orange))
+    // apply circular thresholding (e.g. Hue ranges from 130 (low red) to 22(high orange)) aka when lowH is higher than highH
     else {
         cv::Mat higher, lower;
         cv::inRange(buf, cv::Scalar(hsv[0], hsv[2], hsv[4]), cv::Scalar(HHUE, hsv[3], hsv[5]), higher);
@@ -377,14 +377,15 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> 
     dst = cv::Mat::zeros(src.size(), src.type());
     float rad;
     
-    if (!obj.empty()){
-        for (unsigned int i=0; i<obj.size(); i++){
+    if (!obj.empty()) {
+        for (unsigned int i=0; i<obj.size(); i++) {
              
-             if (obj[i].exist_counter >= MinLife){
+            if (obj[i].exist_counter >= MinLife) {
                  
                 // circle area = pi * radius^2
                 rad = sqrt(obj[i].area/PI_VALUE);
                 cv::circle(dst,cv::Point(obj[i].x,obj[i].y), rad, cv::Scalar(0,0,255), 2, 8, 0);
+
                 if (iDebugLevel > 0) cv::circle(dst,cv::Point(obj[i].x,obj[i].y), 3, cv::Scalar(0,255,0), 2, 8, 0); // draw mass center
             }
         }
@@ -400,15 +401,15 @@ void ColourTracking::disablegui()
 
 void ColourTracking::Display()
 {
-    if (bGUI && iShowThresh == ENABLED){
+    if (bGUI && iShowThresh == ENABLED) {
         
         imshow("Thresholded Image", imgThresh); /* show the thresholded image */
         
     }else destroyWindow("Thresholded Image");
     
-    if (bGUI && iShowOriginal == ENABLED){
+    if (bGUI && iShowOriginal == ENABLED) {
         
-        if (imgOriginal.size() == imgCircles.size()){
+        if (imgOriginal.size() == imgCircles.size()) {
             imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
         }
         imshow("Original", imgOriginal); /* show the original image */
@@ -450,6 +451,7 @@ void ColourTracking::setHSV (int user[])
 bool ColourTracking::CreateControlWindow()
 {
     if (bGUI){
+
         namedWindow("Control", CV_WINDOW_NORMAL);
         
         cvCreateTrackbar("HUE min", "Control", &iHSV[0], 179);
@@ -563,8 +565,8 @@ int ColourTracking::CmdParameters(int argc, char** argv)
             else if (!std::strcmp(argv[j],"-objsize")){
                 ObjectMinsize = std::atoi(argv[j+1]);
                 ObjectMaxsize = std::atoi(argv[j+2]);
-                if (ObjectMaxsize > 300000 || ObjectMinsize < 0){
-                    std::cout << "Object area must be above 0 and below 300000 (512x512 == 262144)\n";
+                if (ObjectMaxsize > 250000 || ObjectMinsize < 0){
+                    std::cout << "Object area must be above 0 and below 250000 (512x512 == 262144)\n";
                     return -1;
                 }
                 std::cout << ts() << " Object minimum size: " << ObjectMinsize << "px2\n";
