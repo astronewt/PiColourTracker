@@ -19,7 +19,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-/** ** ** **/
 
 using namespace cv;
 using namespace std::chrono;
@@ -88,7 +87,7 @@ int ColourTracking::FindObjects(cv::Mat src, float minsize, float maxsize, std::
         mc.push_back (cv::Point((int) (mv[i].m10/mv[i].m00), (int) (mv[i].m01/mv[i].m00)));
         
         // Object arguments: new index, x, y, area, coordinate margin, remove counter
-        found.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i], rm_default));
+        found.push_back (Object(i, (int) mc[i].x, (int) mc[i].y, sv[i], rm_default, iHSV));
     }
     
     // returns number of mass centers (aka objects)
@@ -157,8 +156,8 @@ void ColourTracking::ExistentialObjects(std::vector<Object> found, std::vector<O
                 addrm = false;
                 
                 for (j = 0; j < found.size(); j++){
-                    if (FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y, found[j].cm)){
-                        exist[i].exist_counter++; // increase exist_counter (checked when drawing circles) 
+                    if (FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y, found[j].cm)) {
+                        if (exist[i].lifecnt < MinLife) exist[i].lifecnt++;
                         break;
                     }
                     
@@ -167,12 +166,12 @@ void ColourTracking::ExistentialObjects(std::vector<Object> found, std::vector<O
                 if (j == found.size() && !FitMargin(exist[i].x, exist[i].y, found[j].x, found[j].y, found[j].cm))
                     addrm = true;
                     
-                if (addrm) exist[i].rm_counter--;
+                if (addrm) exist[i].removcnt--;
             }
         }
         else {
             for (i = 0; i < exist.size(); i++){  // if no objects are found at all
-                exist[i].rm_counter--;
+                exist[i].removcnt--;
             }
         }
     }
@@ -193,12 +192,15 @@ unsigned int ColourTracking::CleanupObjects(std::vector<Object>& exist)
     if (!exist.empty()) {
         // remove objects that no longer exist
         exist.erase(std::remove_if(exist.begin(), exist.end(),
-                     [](const Object & o) { return o.rm_counter == 0; } ), exist.end());
+                     [](const Object & o) { return o.removcnt == 0; } ), exist.end());
         
-        if (iDebugLevel == 4) {
+        if (iDebugLevel == 2) {
             std::cout << ts() << " Amount: " << exist.size() << std::endl;
             for (unsigned int i = 0; i < exist.size(); i++){
-                std::cout << ts() << " Ind:" << exist[i].index << " x:" << exist[i].x << " y:" << exist[i].y << " rm:" << exist[i].rm_counter << " life:" << exist[i].exist_counter << std::endl;
+                std::cout << ts() << " Ind:" << exist[i].index << " x:" << exist[i].x << " y:" << exist[i].y << " rm:" << exist[i].removcnt << " life:" << exist[i].lifecnt << std::endl;
+                std::cout << ts() << " Colour range of [" << exist[i].index << "] : H[" << exist[i].lhue << "-" << exist[i].hhue << "]";
+                std::cout << " S[" << exist[i].lsat << "-" << exist[i].hsat << "]";
+                std::cout << " V[" << exist[i].lval << "-" << exist[i].hval << "]";
             }
         }
     }
@@ -227,7 +229,7 @@ void ColourTracking::WriteSendBuffer(std::vector<Object> obj, char* send)
 
     for (unsigned int i = 0; i < obj.size(); i++) {
 
-        if (obj[i].exist_counter >= MinLife) k++; // real object amount 
+        if (obj[i].lifecnt >= MinLife) k++; // real object amount 
     }
 
     bzero(send, 2048); /* flush send buffer */
@@ -246,7 +248,7 @@ void ColourTracking::WriteSendBuffer(std::vector<Object> obj, char* send)
         
         for (unsigned int i = 0; i < obj.size(); i++){
             
-            if (obj[i].exist_counter >= MinLife) {
+            if (obj[i].lifecnt >= MinLife) {
 
                 std::string ind = std::to_string(obj[i].index); /* convert object index to string */
                 std::string x = std::to_string(obj[i].x); /* convert x coord to string */
@@ -273,7 +275,7 @@ void ColourTracking::WriteSendBuffer(std::vector<Object> obj, char* send)
     }
     else strcpy(send, "<start>NOT_COUNTING<end>\n");
     
-    if (iDebugLevel == 7){
+    if (iDebugLevel == 3){
         std::cout << ts() << " Sending:\n" << send;
         std::cout << "\n" << ts() << "send length: " << strlen(send) << std::endl;
     }
@@ -303,7 +305,6 @@ void ColourTracking::t_end()
 {
     end_time = high_resolution_clock::now();
     time_dif += (duration_cast<milliseconds> (end_time - start_time).count());
-//    if (iDebugLevel == 2) std::cout << "Execution time this cycle: " << (duration_cast<milliseconds> (end_time - start_time).count()) << "ms\n";
 }
 
 unsigned int ColourTracking::delay()
@@ -313,18 +314,10 @@ unsigned int ColourTracking::delay()
     
     if (k >= DEF_INTERVAL){
         
-        if (iDebugLevel >= 2){
-            std::cout << ts() << " Average duration per " << k << " cycles: " << ((int) time_dif/(k)) << "ms\n";
-        }
-        
         result = (int) time_dif/(k); 
                 
         if (result < MIN_CYCLE_T) result = MIN_CYCLE_T; //minimum cycle time
         if (result > MAX_CYCLE_T) result = MAX_CYCLE_T; //max
-        
-        if (iDebugLevel >= 2){              
-            std::cout << ts() << " Setting cycle time to: " << result << "ms\n";
-        }
                 
         k = 0;
         time_dif = 0;
@@ -380,7 +373,7 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> 
     if (!obj.empty()) {
         for (unsigned int i=0; i<obj.size(); i++) {
              
-            if (obj[i].exist_counter >= MinLife) {
+            if (obj[i].lifecnt >= MinLife) {
                  
                 // circle area = pi * radius^2
                 rad = sqrt(obj[i].area/PI_VALUE);
@@ -390,29 +383,42 @@ void ColourTracking::DrawCircles(cv::Mat src, cv::Mat& dst, std::vector<Object> 
             }
         }
     }
-    else if (iDebugLevel == 6) std::cout << ts() << " No existing objects. (DrawCircles)\n";
+
+    if (imgOriginal.size() == imgCircles.size()) {
+            imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
+    }
 }
 /**********************************************************************/
 
-void ColourTracking::disablegui()
-{
-    bGUI = false;
-}
-
 void ColourTracking::Display()
 {
+//    if (ResizeImages) ResizeForDisplay(uiFrameHeight, uiFrameWidth);
+//    std::cout << "at display\n";
+
     if (bGUI && iShowThresh == ENABLED) {
-        
-        imshow("Thresholded Image", imgThresh); /* show the thresholded image */
+
+        //imshow("Thresholded Image", imgThresh); /* show the thresholded image */
+        if (ResizeImages) {
+            cv::Mat rsThresh;
+            cv::resize(imgThresh, rsThresh, cv::Size(uiFrameWidth, uiFrameHeight), 0, 0, INTER_AREA);
+            imshow("Thresholded Image", rsThresh); /* show the thresholded image */
+        }
+        else {
+             imshow("Thresholded Image", imgThresh);
+        }
         
     }else destroyWindow("Thresholded Image");
     
     if (bGUI && iShowOriginal == ENABLED) {
         
-        if (imgOriginal.size() == imgCircles.size()) {
-            imgOriginal = imgOriginal + imgCircles;       /* add drawn circles to original */
+        if (ResizeImages) {
+            cv::Mat rsOrig;
+            cv::resize(imgOriginal, rsOrig, cv::Size(uiFrameWidth, uiFrameHeight), 0, 0, INTER_AREA);
+            imshow("Original", rsOrig); /* show the thresholded image */
         }
-        imshow("Original", imgOriginal); /* show the original image */
+        else {
+            imshow("Original", imgOriginal); /* show the original image */
+        }
         
     }else destroyWindow("Original");
 }
@@ -464,7 +470,7 @@ bool ColourTracking::CreateControlWindow()
         cvCreateTrackbar("Thresh", "Control", &iShowThresh, 1);
         cvCreateTrackbar("Count", "Control", &iCount, 1);
         cvCreateTrackbar("Morph", "Control", &iMorphLevel, 2);
-        cvCreateTrackbar("Debug", "Control", &iDebugLevel, 10);
+        cvCreateTrackbar("Debug", "Control", &iDebugLevel, 3);
         cvCreateTrackbar("Move", "Control", &iObjMove, 1);
     }
 
@@ -476,7 +482,7 @@ int ColourTracking::CmdParameters(int argc, char** argv)
     if (argc > 1){
         for (int j=1; j<argc; j++){
             if (!std::strcmp(argv[j], "-help")){
-                std::cout << "List of arguments:\n-framesize  height width\n-objsize min max (0..300000)\n";
+                std::cout << "List of arguments:\n-capsize height width\n-framesize height width\n-objsize min max (0..300000)\n";
                 std::cout << "-nogui (Disables graphical user interface)\n";
                 std::cout << "-hue min max (0..179)\n-sat min max (0..255)\n-val min max (0.255)\n";
                 std::cout << "-morph # (0..2)\n-nocount (Not recommended for commandline)\n";
@@ -487,19 +493,30 @@ int ColourTracking::CmdParameters(int argc, char** argv)
                 std::cout << "-noblur   Disables blurring before thresholding the HSV image.\n";
                 return -1;
             }
-            else if (!std::strcmp(argv[j],"-framesize")){
+            else if (!std::strcmp(argv[j],"-capsize")){
                     uiCaptureHeight = std::atoi(argv[j+1]);
                     uiCaptureWidth = std::atoi(argv[j+2]);
                     ObjectMinsize = (uiCaptureHeight * uiCaptureWidth) / 100;
                     ObjectMaxsize = (uiCaptureHeight * uiCaptureWidth) / 4;
                     j += 2;
-                    if (uiCaptureHeight < 64 || uiCaptureHeight > 512 || uiCaptureWidth < 64 || uiCaptureWidth > 512){
-                        std::cout << "Height and width can be set between 64..512.\n";
+                    if (uiCaptureHeight < 64 || uiCaptureHeight > 1024 || uiCaptureWidth < 64 || uiCaptureWidth > 1024){
+                        std::cout << "Capture eight and width can be set between 64..1024 .\n";
                         return -1;
                     }
-            } 
+            }
+            else if (!std::strcmp(argv[j],"-framesize")){
+                    uiFrameHeight = std::atoi(argv[j+1]);
+                    uiFrameWidth = std::atoi(argv[j+2]);
+                    ResizeImages = true;
+                    j += 2;
+                    if (uiFrameHeight < 64 || uiFrameHeight > 1024 || uiFrameWidth < 64 || uiFrameWidth > 1024){
+                        std::cout << "Display height and width can be set between 64..1024 .\n";
+                        return -1;
+                    }
+            }  
             else if (!std::strcmp(argv[j],"-nogui")){
-                    disablegui();
+                    //disablegui();
+                    bGUI = false;
             }
             else if (!std::strcmp(argv[j],"-noblur")){
                     bThreshBlur = DISABLED;
@@ -534,8 +551,8 @@ int ColourTracking::CmdParameters(int argc, char** argv)
             else if (!std::strcmp(argv[j],"-debug")){
                 iDebugLevel = std::atoi(argv[j+1]);
                 j++;
-                    if (iDebugLevel < 0 || iDebugLevel > 4){
-                        std::cout << "Debug level can be set from 0 to 4.\n";
+                    if (iDebugLevel < 0 || iDebugLevel > 3){
+                        std::cout << "Debug level can be set from 0 to 3.\n";
                         return -1;
                     }
             }
@@ -552,6 +569,10 @@ int ColourTracking::CmdParameters(int argc, char** argv)
             }
             else if (!std::strcmp(argv[j],"-udppass")){
                 std::strcpy(argv[j+1],comm_pass);
+                if (strlen(comm_pass) > 64) {
+                    std::cout << "UDP pass too long. Maximum 64 symbols.\n";
+                    return -1;
+                }
                 j++;
             }
             else if (!std::strcmp(argv[j],"-udpport")){

@@ -10,20 +10,22 @@
 
 #define COMM_PORT 12015
 #define COMM_PROTOCOL 0 // UDP
-#define COMM_PASS "objectcount"
+#define COMM_PASS "getobjectinfo"
 
-#define CAP_HEIGHT 320
-#define CAP_WIDTH 360
+#define CAP_HEIGHT 256
+#define CAP_WIDTH 256
 #define ENABLED 1
 #define DISABLED 0
 #define MAX_CYCLE_T 200
 #define MIN_CYCLE_T 50
+
 #define LHUE 0
 #define LSAT 0
 #define LVAL 0
 #define HHUE 179
 #define HSAT 255
 #define HVAL 255
+
 #define ESCAPE 27
 #define DEF_INTERVAL 100
 #define PI_VALUE 3.1415926535
@@ -46,9 +48,9 @@
 
 class ColourTracking
 {
-    private:
     /******************** Private access variables ********************/
     /***************** (e.g. configuration parameters) ****************/
+    private:
     
     // Image pixel arrays
     cv::Mat imgThresh;
@@ -70,6 +72,9 @@ class ColourTracking
     unsigned int uiDelay;
     unsigned int uiCaptureHeight;
     unsigned int uiCaptureWidth;
+    unsigned int uiFrameHeight;
+    unsigned int uiFrameWidth;
+    bool ResizeImages;
     
     // limits for counting objects
     float ObjectMinsize;
@@ -100,21 +105,31 @@ class ColourTracking
         int x; // x coord
         int y; // y coord
         int area; // area value
-        unsigned int rm_counter; // if this reaches 0, the object is removed
-        unsigned int exist_counter; // amount of cycles the object has existed
+        unsigned int removcnt; // if this reaches 0, the object is removed
+        unsigned int lifecnt; // amount of cycles the object has existed
         float cm; // coordinate margin
-
+        int lhue;
+        int hhue;
+        int lsat;
+        int hsat;
+        int lval;
+        int hval;
         
-        Object(unsigned int newindex, int newx, int newy, int newarea, int rmdef) 
+        Object(unsigned int newindex, int newx, int newy, int newarea, int rmdef, int hsv[]) 
         { 
             index = newindex;
             x = newx;
             y = newy;
             area = newarea;
-            rm_counter = rmdef;
-            exist_counter = 0;
+            removcnt = rmdef;
+            lifecnt = 0;
             cm = (sqrt(area))/2;
-            
+            lhue = hsv[0];
+            hhue = hsv[1];
+            lsat = hsv[2];
+            hsat = hsv[3];
+            lval = hsv[4];
+            hval = hsv[5];
         } 
 
     };
@@ -126,11 +141,6 @@ class ColourTracking
     
     std::vector<Object> vecExistingObjects;
     std::vector<Object> vecFoundObjects;
-
-
-    /******************************************************************/
-    
-    
     
     /******************** OpenCV-related and other ********************/
     /******************** private access functions ********************/
@@ -157,16 +167,11 @@ class ColourTracking
     void SetupSocket();/* bind socket */
     void RecvSend(char*, char*); /* receive and send information back (if correct pass) */
     void WriteSendBuffer(std::vector<Object>, char*); /* write useful information to buffer */ 
-    
-    void disablegui(); /* set GUI parameter to false */
-
-    /******************************************************************/
-    
-    
-    
-    public:
+     
     /******************** Public access variables *********************/
-    /******************************************************************/
+    /************************ and functions ***************************/
+    public:
+
     cv::Mat imgOriginal; /* this Mat is public because it's used in main */
 
     void setHSV (int *); /* set hue, saturation and light intensity*/
@@ -179,12 +184,9 @@ class ColourTracking
 
     unsigned int width() { return uiCaptureWidth; } /* return array of hsv values */
 
-    /******************************************************************/
-    
-    
-    
-    /********************* Public functions ***************************/
-    /******************************************************************/
+    bool getGUI() { return bGUI; }
+
+    bool showingImages() { return (iShowOriginal > 0 || iShowThresh > 0); }
         
     ColourTracking() /* assign default values */
     {
@@ -202,6 +204,10 @@ class ColourTracking
         iDebugLevel = DEF_DEBUG;
         uiCaptureHeight = CAP_HEIGHT;
         uiCaptureWidth = CAP_WIDTH;
+//        uiFrameHeight = uiCaptureHeight;
+//        uiFrameWidth = uiCaptureWidth;
+        
+        ResizeImages = false;
         
         ObjectMinsize = (uiCaptureHeight * uiCaptureWidth) / 100;
         ObjectMaxsize = (uiCaptureHeight * uiCaptureWidth) / 4;
@@ -235,10 +241,7 @@ class ColourTracking
     // returns timestamp "[HH:MM:SS]"
     std::string ts();
     
-    /******************************************************************/
 };
-
-
 
 
 #endif
